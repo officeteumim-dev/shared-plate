@@ -1,0 +1,35 @@
+# Publishes the app, the database rules and indexes, and the server code to Firebase when main changes.
+# Needs the FIREBASE_SERVICE_ACCOUNT secret (README → "First-time setup"). Until it's added, nothing is deployed.
+name: Deploy
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+concurrency: deploy
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      SA: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+    steps:
+      - uses: actions/checkout@v4
+        if: env.SA != ''
+      - uses: actions/setup-node@v4
+        if: env.SA != ''
+        with:
+          node-version: 22
+      - name: Install server code
+        if: env.SA != ''
+        working-directory: functions
+        run: npm install --omit=dev
+      - name: Deploy
+        if: env.SA != ''
+        run: |
+          echo "$SA" > "$RUNNER_TEMP/sa.json"
+          export GOOGLE_APPLICATION_CREDENTIALS="$RUNNER_TEMP/sa.json"
+          PROJECT=$(python3 -c "import json;print(json.load(open('$RUNNER_TEMP/sa.json'))['project_id'])")
+          npx --yes firebase-tools@latest deploy --only hosting,firestore,functions --project "$PROJECT" --non-interactive --force
+      - name: Not set up yet
+        if: env.SA == ''
+        run: echo "FIREBASE_SERVICE_ACCOUNT secret not added yet, so nothing was deployed."
