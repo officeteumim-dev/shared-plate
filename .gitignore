@@ -1,0 +1,6 @@
+node_modules/
+functions/logic.js
+*.log
+.firebase/
+firebase-debug.log*
+firestore-debug.log*
