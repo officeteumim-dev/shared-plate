@@ -15,7 +15,9 @@ before(async () => {
 after(async () => { await browser?.close(); server?.close(); });
 
 async function open(opts = {}) {
-  const page = await browser.newPage({ viewport: { width: 390, height: 844 }, hasTouch: true, colorScheme: opts.dark ? 'dark' : 'light' });
+  const page = await browser.newPage({ viewport: { width: 390, height: 844 }, hasTouch: true, colorScheme: opts.dark ? 'dark' : 'light', timezoneId: 'America/New_York' });
+  // A fixed Friday morning, so "today", "overdue" and the sample tasks look the same whenever the tests run.
+  await page.clock.setFixedTime(new Date('2026-11-06T09:00:00-05:00'));
   const errors = [];
   page.on('pageerror', e => errors.push(e.message));
   // Fonts and Firebase come from CDNs; the preview doesn't need them, and blocking keeps the tests offline-safe.
@@ -93,10 +95,15 @@ test('finishing a repeating task schedules the next one', async () => {
   const { page } = await open();
   await page.click('section.lane.mine .row-wrap:has-text("Pick up challah") [data-act=done]');
   await page.waitForFunction(() => /Next one/.test(document.querySelector('#toast')?.textContent || ''));
-  const titles = await laneTitles(page, 'mine');
-  assert.ok(titles.includes('Pick up challah'), 'the next week’s copy is on the plate');
-  const meta = await page.textContent('section.lane.mine .row-wrap:has-text("Pick up challah") .meta');
-  assert.doesNotMatch(meta, /Today/);
+  // The list redraws just after the toast. Wait until exactly one challah row is left: next week's copy.
+  const challah = () => page.$$eval('section.lane.mine .row-wrap', els =>
+    els.filter(e => e.querySelector('.title')?.textContent === 'Pick up challah').map(e => e.querySelector('.meta')?.textContent || ''));
+  await page.waitForFunction(() => [...document.querySelectorAll('section.lane.mine .row-wrap .meta')]
+    .filter(m => m.closest('.row-wrap').querySelector('.title').textContent === 'Pick up challah')
+    .every(m => !/Today|Overdue/.test(m.textContent)));
+  const metas = await challah();
+  assert.equal(metas.length, 1, 'the next week’s copy is on the plate');
+  assert.doesNotMatch(metas[0], /Today|Overdue/);
 });
 
 test('swiping a task to the right marks it done', async () => {
