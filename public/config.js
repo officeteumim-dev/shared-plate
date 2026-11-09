@@ -11,7 +11,7 @@
     appId: "1:700423968820:web:32b393c28b998f82345261"
   };
   // Firebase console → Project settings → Cloud Messaging → Web Push certificates → "Key pair" (the public key).
-  const VAPID_KEY = "";
+  const VAPID_KEY = "BFjYj2ubpvSLQ7p2UqhaL8mbwKl3e0BrvVY3gRYqTYnLCbRbhWeThrpT0tDkD_pDoCJbXIEPeJsRMlvsVCqVFdI";
 
   self.SP_CONFIG = {
     firebase: FIREBASE,
