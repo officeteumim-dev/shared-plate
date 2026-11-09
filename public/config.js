@@ -3,12 +3,12 @@
 (function () {
   // Firebase console → Project settings → Your apps → Web app → "firebaseConfig". Paste the values here.
   const FIREBASE = {
-    apiKey: "",
-    authDomain: "",
-    projectId: "",
-    storageBucket: "",
-    messagingSenderId: "",
-    appId: ""
+    apiKey: "AIzaSyDIXBlpfcQjpLwa_MV_MDFo6rWLXAeiuoc",
+    authDomain: "shared-plate144.firebaseapp.com",
+    projectId: "shared-plate144",
+    storageBucket: "shared-plate144.firebasestorage.app",
+    messagingSenderId: "700423968820",
+    appId: "1:700423968820:web:32b393c28b998f82345261"
   };
   // Firebase console → Project settings → Cloud Messaging → Web Push certificates → "Key pair" (the public key).
   const VAPID_KEY = "";
