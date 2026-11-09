@@ -1,0 +1,122 @@
+rules_version = '2';
+
+// Shared Plate security rules. Deployed by GitHub Actions (.github/workflows/deploy.yml) and tested against the
+// Firestore emulator on every push (tests/rules). Everything is scoped to a group: you can only see and change the
+// groups you belong to, and only a group's owner can manage its members.
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Signed in with a confirmed email (Google and email-link accounts are always confirmed).
+    function signedIn() {
+      return request.auth != null && request.auth.token.email != null && request.auth.token.email_verified == true;
+    }
+    // Sign-up allowlist. Keep this list the same as allowlist in public/config.js and ALLOWLIST in functions/index.js.
+    // Phase 3 (open sign-up): replace the body with `return signedIn();`.
+    function allowed() {
+      return signedIn() && request.auth.token.email.lower() in [
+        'office.teumim@gmail.com'
+      ];
+    }
+    function me() { return request.auth.uid; }
+    function groupData(g) { return get(/databases/$(database)/documents/groups/$(g)).data; }
+    function isMember(g) { return allowed() && me() in groupData(g).members; }
+    function unchanged(keys) { return !request.resource.data.diff(resource.data).affectedKeys().hasAny(keys); }
+    function onlyChanged(keys) { return request.resource.data.diff(resource.data).affectedKeys().hasOnly(keys); }
+    function str(v, max) { return v is string && v.size() > 0 && v.size() <= max; }
+    function optStr(d, k, max) { return !(k in d) || (d[k] is string && d[k].size() <= max); }
+    function optTime(d, k) { return !(k in d) || d[k] == null || d[k] is timestamp; }
+
+    // ---------- Groups ----------
+    // groups/{g}: name, createdBy, createdAt, members (uid → 'owner' | 'member'), names (uid → display name), inviteCode.
+    // Joining by invite code goes through the joinGroup Cloud Function, which checks the code and the allowlist.
+    match /groups/{g} {
+      function validMembers(m) {
+        return m is map && m.size() > 0 && m.size() <= 20;
+      }
+      allow read: if allowed() && me() in resource.data.members;
+
+      allow create: if allowed()
+        && request.resource.data.keys().hasOnly(['name', 'createdBy', 'createdAt', 'members', 'names', 'inviteCode'])
+        && str(request.resource.data.name, 60)
+        && request.resource.data.createdBy == me()
+        && request.resource.data.createdAt == request.time
+        && request.resource.data.members.keys().hasOnly([me()])
+        && request.resource.data.members[me()] == 'owner'
+        && request.resource.data.names is map
+        && request.resource.data.names.keys().hasOnly([me()])
+        && request.resource.data.inviteCode is string && request.resource.data.inviteCode.size() == 8;
+
+      allow update: if allowed() && me() in resource.data.members && (
+        // The owner manages the group: name, members, invite code. They stay an owner and can't change who created it.
+        (resource.data.members[me()] == 'owner'
+          && unchanged(['createdBy', 'createdAt'])
+          && request.resource.data.keys().hasOnly(['name', 'createdBy', 'createdAt', 'members', 'names', 'inviteCode'])
+          && str(request.resource.data.name, 60)
+          && validMembers(request.resource.data.members)
+          && request.resource.data.members[me()] == 'owner'
+          && request.resource.data.inviteCode is string && request.resource.data.inviteCode.size() == 8)
+        // Any member can change their own display name.
+        || (onlyChanged(['names'])
+          && request.resource.data.names.diff(resource.data.names).affectedKeys().hasOnly([me()])
+          && str(request.resource.data.names[me()], 60))
+        // A member (not the owner) can leave.
+        || (resource.data.members[me()] == 'member'
+          && onlyChanged(['members', 'names'])
+          && request.resource.data.members.diff(resource.data.members).affectedKeys().hasOnly([me()])
+          && !(me() in request.resource.data.members))
+      );
+
+      allow delete: if allowed() && resource.data.members[me()] == 'owner';
+
+      // ---------- Tasks ----------
+      match /tasks/{t} {
+        function validTask(d) {
+          let members = groupData(g).members;
+          return d.keys().hasOnly(['title', 'notes', 'owner', 'claimedBy', 'claimedAt', 'status', 'dueAt', 'showAgainOn',
+              'repeat', 'createdBy', 'createdAt', 'updatedAt', 'completedAt', 'completedBy', 'notifyAt', 'notifyOnly',
+              'notifyKind', 'nextId', 'repeatOf'])
+            && str(d.title, 200)
+            && optStr(d, 'notes', 2000)
+            && d.status in ['open', 'snoozed', 'done']
+            && (d.owner == 'shared' || d.owner in members)
+            && (d.get('claimedBy', null) == null || (d.owner == 'shared' && d.claimedBy in members))
+            && (d.status != 'snoozed' || d.get('showAgainOn', null) is timestamp)
+            && optTime(d, 'dueAt') && optTime(d, 'showAgainOn') && optTime(d, 'completedAt')
+            && optTime(d, 'notifyAt') && optTime(d, 'claimedAt')
+            && (d.get('completedBy', null) == null || d.completedBy in members)
+            && (!('repeat' in d) || d.repeat in ['none', 'daily', 'weekly', 'monthly'] || d.repeat is map)
+            && (d.get('notifyOnly', null) == null || d.notifyOnly is list)
+            && d.get('notifyKind', null) in [null, 'due', 'back'];
+        }
+        allow read: if isMember(g);
+        allow create: if isMember(g)
+          && validTask(request.resource.data)
+          && request.resource.data.createdBy == me()
+          && request.resource.data.createdAt == request.time;
+        allow update: if isMember(g)
+          && validTask(request.resource.data)
+          && unchanged(['createdBy', 'createdAt']);
+        allow delete: if isMember(g);
+      }
+    }
+
+    // ---------- Users ----------
+    // users/{uid}: displayName, email, groupIds, tokens (FCM token → {platform, updatedAt}), prefs, quiet hours, tz.
+    // Only you can read or change your own record. The other person's name is shown from the group's `names` map.
+    match /users/{u} {
+      function validUser(d) {
+        return d.keys().hasOnly(['displayName', 'email', 'groupIds', 'tokens', 'prefs', 'quiet', 'tz', 'createdAt', 'updatedAt'])
+          && optStr(d, 'displayName', 60)
+          && (!('groupIds' in d) || (d.groupIds is list && d.groupIds.size() <= 20))
+          && (!('tokens' in d) || (d.tokens is map && d.tokens.size() <= 10))
+          && (!('quiet' in d) || d.quiet is map)
+          && (!('prefs' in d) || d.prefs is map)
+          && optStr(d, 'tz', 64);
+      }
+      allow read: if allowed() && me() == u;
+      allow create, update: if allowed() && me() == u && validUser(request.resource.data);
+      allow delete: if signedIn() && me() == u;
+    }
+  }
+}

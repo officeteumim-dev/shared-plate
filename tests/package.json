@@ -1,0 +1,7 @@
+{
+  "name": "shared-plate-tests",
+  "private": true,
+  "type": "module",
+  "scripts": { "test": "TZ=America/New_York node --test --test-concurrency=1 *.test.mjs" },
+  "devDependencies": { "playwright": "1.63.0" }
+}
