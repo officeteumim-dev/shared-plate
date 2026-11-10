@@ -185,6 +185,8 @@
     if ('serviceWorker' in navigator && !PREVIEW && location.protocol === 'https:') navigator.serviceWorker.register('/sw.js').catch(() => {});
     const join = /join=([A-Za-z0-9]+)/.exec(location.hash);
     if (join) { try { localStorage.setItem('sp_join', join[1].toUpperCase()); } catch (e) {} history.replaceState(null, '', location.pathname + location.search); }
+    const imp = /import=([A-Za-z0-9_-]+)/.exec(location.hash);
+    if (imp) { S.pendingImport = imp[1]; history.replaceState(null, '', location.pathname + location.search); }
     addEventListener('online', netState); addEventListener('offline', netState); netState();
     if (PREVIEW) { B = previewBackend(); return signedIn({ uid: B.uid, email: B.email, displayName: 'Avi' }); }
     if (!C.configured) return renderNotConfigured();
@@ -297,7 +299,8 @@
       if (!g) return lost({ code: 'permission-denied' });
       S.group = g; render();
     }, lost));
-    S.unsub.push(B.watchTasks(gid, list => { S.open = list; S.loaded = true; render(); openDeepLink(); }, list => { S.done = list; if (S.view === 'done') render(); }, lost));
+    S.unsub.push(B.watchTasks(gid, list => { S.open = list; S.loaded = true; render(); openDeepLink();
+      if (S.pendingImport) { const c = S.pendingImport; S.pendingImport = null; openImport(c); } }, list => { S.done = list; if (S.view === 'done') render(); }, lost));
     refreshPushToken();
   }
 
@@ -758,6 +761,11 @@
         ${isOwner() ? `<label class="field"><span>Household name</span><input type="text" id="g-name" maxlength="60" value="${esc(S.group.name)}"></label>
           <button class="link" data-act="new-code">Make a new code (the old one stops working)</button>` : '<button class="link" data-act="leave">Leave this household</button>'}
       </section>
+      <section class="settings-section"><h3>Import tasks</h3>
+        <p class="muted small">Paste an import code or link to add a list of tasks to your plate.</p>
+        <textarea id="import-code" rows="3" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="Import code"></textarea>
+        <button class="btn quiet" data-act="import-preview">Preview</button>
+      </section>
       <section class="settings-section"><h3>You</h3>
         <label class="field"><span>Your name in this household</span><input type="text" id="my-name" maxlength="60" value="${esc(myName())}"></label>
         <p class="muted small">Signed in as ${esc(S.email)}</p>
@@ -833,6 +841,68 @@
   }
   function refreshPushSection() { const s = $('#push-section'); if (s) s.outerHTML = pushSection(); }
 
+  // ---------- Import a list of tasks ----------
+  // An import code is base64url JSON: { v: 1, tasks: [{ title, status: open|snoozed|done, back: 'YYYY-MM-DD', due: 'YYYY-MM-DD[THH:MM]', notes, owner: 'me'|'shared' }] }.
+  // Everything lands on the importer's plate unless owner is 'shared'. Open tasks already on the plate (same title) are skipped.
+  function parseImport(text) {
+    let raw = String(text || '').trim();
+    const m = /import=([A-Za-z0-9_-]+)/.exec(raw); if (m) raw = m[1];
+    let data;
+    try {
+      if (raw.startsWith('{')) data = JSON.parse(raw);
+      else {
+        const bin = atob(raw.replace(/-/g, '+').replace(/_/g, '/').replace(/\s+/g, ''));
+        data = JSON.parse(new TextDecoder().decode(Uint8Array.from(bin, c => c.charCodeAt(0))));
+      }
+    } catch (e) { return null; }
+    const list = Array.isArray(data) ? data : data && data.tasks;
+    if (!Array.isArray(list)) return null;
+    const day = (s, h) => { const r = /^(\d{4})-(\d{2})-(\d{2})(?:T(\d{2}):(\d{2}))?$/.exec(s || ''); return r ? new Date(+r[1], r[2] - 1, +r[3], r[4] != null ? +r[4] : h, r[5] != null ? +r[5] : 0).getTime() : null; };
+    return list.slice(0, 200).map(x => {
+      const title = String(x.title || '').trim().slice(0, 200);
+      if (!title) return null;
+      let status = ['open', 'snoozed', 'done'].includes(x.status) ? x.status : 'open';
+      const back = day(x.back, 8);
+      if (status === 'snoozed' && !(back > now())) status = 'open';
+      return { title, status, back: status === 'snoozed' ? back : null, due: day(x.due, 9), notes: String(x.notes || '').slice(0, 2000), shared: x.owner === 'shared' };
+    }).filter(Boolean);
+  }
+
+  function openImport(text) {
+    const items = parseImport(text);
+    if (!items) return toast('That import code isn’t complete. Copy the whole code and try again.');
+    const have = new Set(S.open.map(x => x.title.trim().toLowerCase()));
+    const fresh = items.filter(x => !have.has(x.title.toLowerCase()));
+    const skipped = items.length - fresh.length;
+    const n = k => fresh.filter(x => x.status === k).length;
+    const t = now();
+    openSheet(`<div class="stack">
+      <h2>Add ${fresh.length} ${fresh.length === 1 ? 'task' : 'tasks'}?</h2>
+      <p class="muted">${n('open')} open, ${n('snoozed')} snoozed and ${n('done')} already done (those go to Completed).
+        They go on your plate${fresh.some(x => x.shared) ? ', except the ones marked shared' : ''}.${skipped ? ` ${skipped} already on the plate will be skipped.` : ''}</p>
+      <ul class="list import-list">${fresh.map(x => `<li class="row-wrap lane ${x.shared ? 'shared' : 'mine'}"><div class="task" style="grid-template-columns:1fr">
+        <div class="body"><div class="title" ${x.status === 'done' ? 'style="text-decoration:line-through"' : ''}>${esc(x.title)}</div>
+        <div class="meta">${x.status === 'snoozed' ? `<span>Back ${esc(L.fmtWhen(x.back, t))}</span>` : ''}${x.due ? `<span>Due ${esc(L.fmtWhen(x.due, t))}</span>` : ''}${x.status === 'done' ? '<span>Done</span>' : ''}${x.notes ? '<span>Note</span>' : ''}</div></div></div></li>`).join('')}</ul>
+      <button class="btn block" data-act="import-go" ${fresh.length ? '' : 'disabled'}>Add ${fresh.length} to the plate</button>
+      <button class="btn quiet block" data-act="close">Cancel</button>
+    </div>`, sheet => {
+      sheet.querySelector('[data-act=import-go]').onclick = () => {
+        for (const x of fresh) {
+          const d = {
+            title: x.title, notes: x.notes, owner: x.shared ? 'shared' : S.uid, claimedBy: null, status: x.status,
+            dueAt: x.due, repeat: 'none', createdBy: S.uid, createdAt: 'NOW', updatedAt: 'NOW'
+          };
+          if (x.status === 'snoozed') d.showAgainOn = x.back;
+          if (x.status === 'done') { d.completedAt = 'NOW'; d.completedBy = S.uid; }
+          d.notifyAt = L.notifyAtFor({ ...d, showAgainOn: x.back }, now());
+          B.setTask(S.gid, B.newId(S.gid), d);
+        }
+        closeSheet();
+        toast(`Added ${fresh.length} ${fresh.length === 1 ? 'task' : 'tasks'}.`);
+      };
+    });
+  }
+
   // ---------- Deep links from notifications: #task=groupId/taskId ----------
   function openDeepLink() {
     const m = /task=([^&]+)/.exec(location.hash);
@@ -872,6 +942,7 @@
         if (navigator.share) return navigator.share({ title: 'Shared Plate', text, url: link }).catch(() => {});
         return navigator.clipboard?.writeText(`${text}\n${link}`).then(() => toast('Invite link copied.'), () => toast(link));
       }
+      case 'import-preview': { const v = $('#import-code')?.value || ''; if (!v.trim()) return toast('Paste an import code first.'); return openImport(v); }
       case 'new-code': return B.updateGroup(S.gid, { inviteCode: makeCode() }).then(() => { closeSheet(); openSettings('invite'); }).catch(er => fail(er, 'make a new code'));
       case 'leave':
         if (!confirm('Leave this household? You’ll stop seeing its tasks.')) return;

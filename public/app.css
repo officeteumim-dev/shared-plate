@@ -243,3 +243,5 @@ details.more summary { list-style: none; gap: 8px; }
 details.more summary::-webkit-details-marker { display: none; }
 details.more summary::before { content: "+"; font-weight: 700; width: 1em; }
 details.more[open] summary::before { content: "−"; }
+.import-list { max-height: 46vh; overflow-y: auto; }
+.import-list .task { min-height: 52px; padding-left: 16px; }

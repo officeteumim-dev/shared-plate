@@ -158,3 +158,37 @@ test('the manifest and service worker are in place', async () => {
   assert.ok(m.icons.some(i => i.purpose === 'maskable'));
   assert.equal((await fetch(`${base}/sw.js`)).status, 200);
 });
+
+test('importing a list adds open, snoozed and done tasks, and skips ones already on the plate', async () => {
+  const { page, errors } = await open();
+  const json = JSON.stringify({ v: 1, tasks: [
+    { title: 'Call Rieber swap dumpster', status: 'open' },
+    { title: 'Follow up on the salmon', status: 'snoozed', back: '2026-11-04' },
+    { title: 'Schedule RJJ', status: 'snoozed', back: '2026-11-10', notes: 'During the day' },
+    { title: 'Shabbos plans', status: 'done' },
+    { title: 'Pay the electric bill', status: 'open' }
+  ] });
+  const code = Buffer.from(json).toString('base64url');
+  await page.click('[data-act=settings]');
+  await page.fill('#import-code', code);
+  await page.click('[data-act=import-preview]');
+  assert.match(await page.textContent('.sheet h2'), /Add 4 tasks/);
+  assert.match(await page.textContent('.sheet'), /1 already on the plate will be skipped/);
+  await page.click('[data-act=import-go]');
+  await page.waitForFunction(() => [...document.querySelectorAll('section.lane.mine .title')].some(e => e.textContent === 'Call Rieber swap dumpster'));
+  const mine = await laneTitles(page, 'mine');
+  assert.ok(mine.includes('Follow up on the salmon'), 'a snooze date in the past comes in as open');
+  assert.ok(!mine.includes('Schedule RJJ'), 'a future snooze stays hidden');
+  assert.match(await page.textContent('details.more summary'), /Snoozed \(2\)/);
+  await page.click('[data-act=show-done]');
+  assert.match(await page.textContent('main'), /Shabbos plans/);
+  assert.deepEqual(errors, []);
+});
+
+test('a broken import code gives a clear message', async () => {
+  const { page } = await open();
+  await page.click('[data-act=settings]');
+  await page.fill('#import-code', 'not-a-real-code');
+  await page.click('[data-act=import-preview]');
+  assert.match(await page.textContent('#toast'), /isn’t complete/);
+});
