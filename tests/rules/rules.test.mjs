@@ -109,6 +109,13 @@ test('a member can change only their own name, and can leave', async () => {
   await assertSucceeds(updateDoc(doc(db.B(), 'groups', G), { [`members.${B}`]: deleteField(), [`names.${B}`]: deleteField() }));
 });
 
+test('any member can change the household colors; outsiders cannot', async () => {
+  await assertSucceeds(updateDoc(doc(db.B(), 'groups', G), { [`colors.${B}`]: '#2f5fa8', 'colors.shared': '#a8741a' }));
+  await assertSucceeds(updateDoc(doc(db.A(), 'groups', G), { name: 'Home sweet home' }));
+  await assertFails(updateDoc(doc(db.C(), 'groups', G), { [`colors.${C}`]: '#000000' }));
+  await assertFails(updateDoc(doc(db.B(), 'groups', G), { colors: 'red' }));
+});
+
 test('only the owner can delete the group', async () => {
   await assertFails(deleteDoc(doc(db.B(), 'groups', G)));
   await assertSucceeds(deleteDoc(doc(db.A(), 'groups', G)));

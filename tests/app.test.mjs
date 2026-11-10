@@ -192,3 +192,44 @@ test('a broken import code gives a clear message', async () => {
   await page.click('[data-act=import-preview]');
   assert.match(await page.textContent('#toast'), /isn’t complete/);
 });
+
+test('calendar shows the month with tasks colored by owner, and lists a tapped day', async () => {
+  const { page, errors } = await open();
+  await page.click('[data-act=calendar]');
+  assert.match(await page.textContent('.cal-nav h2'), /November/);
+  // Friday Nov 6: challah (mine), pediatrician (Leah's), recycling (Leah took it).
+  const today = page.locator('.day.is-today');
+  assert.equal(await today.locator('.mark').count(), 3);
+  assert.match(await page.textContent('.cal-agenda'), /Pick up challah/);
+  assert.match(await page.textContent('.cal-agenda'), /Pediatrician appointment/);
+  // Weekly challah repeats on Nov 13 (shown as a ring).
+  await page.click('.day:not(.out) >> text="13"');
+  assert.match(await page.textContent('.cal-agenda h3'), /13/);
+  assert.match(await page.textContent('.cal-agenda'), /Pick up challah/);
+  assert.equal(await page.locator('.day.sel .mark.rep').count() >= 1, true);
+  assert.deepEqual(errors, []);
+});
+
+test('calendar moves between months, and Add uses the chosen day', async () => {
+  const { page } = await open();
+  await page.click('[data-act=calendar]');
+  await page.click('[data-act=cal-next]');
+  assert.match(await page.textContent('.cal-nav h2'), /December/);
+  await page.click('.day:not(.out) >> text="24"');
+  await page.click('[data-act=add-on-day]');
+  assert.equal(await page.inputValue('#task-form [name=date]'), '2026-12-24');
+  await page.fill('#task-form [name=title]', 'Light the menorah');
+  await page.click('#task-form [type=submit]');
+  await page.waitForFunction(() => /Light the menorah/.test(document.querySelector('.cal-agenda')?.textContent || ''));
+});
+
+test('colors can be changed in Settings and show in the lanes and calendar', async () => {
+  const { page, errors } = await open();
+  await page.click('[data-act=settings]');
+  await page.click('.color-row[data-key=me] [data-color="#2f5fa8"]');
+  await page.waitForFunction(() => getComputedStyle(document.documentElement).getPropertyValue('--mine').trim() === '#2f5fa8');
+  assert.equal(await page.getAttribute('.color-row[data-key=me] [data-color="#2f5fa8"]', 'aria-pressed'), 'true');
+  await page.click('[data-act=colors-reset]');
+  await page.waitForFunction(() => getComputedStyle(document.documentElement).getPropertyValue('--mine').trim() === '#1e6f6a');
+  assert.deepEqual(errors, []);
+});

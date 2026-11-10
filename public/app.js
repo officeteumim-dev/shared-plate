@@ -24,6 +24,8 @@
   const ICON = {
     plus: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>',
     gear: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3.2"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>',
+    cal: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="5" width="17" height="15.5" rx="2.5"/><path d="M3.5 10h17M8 3v4M16 3v4"/></svg>',
+    next: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg>',
     back: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>'
   };
 
@@ -37,6 +39,29 @@
     return o.length === 1 ? `${S.group.names?.[o[0]] || 'Their'}’s` : 'Theirs';
   }
   const isOwner = () => S.group?.members?.[S.uid] === 'owner';
+
+  // ---------- Colors ----------
+  // Household-wide: group.colors maps a uid (or 'shared') to a hex color, so a person looks the same on every phone.
+  // Without a choice, the person signed in is teal, the other person plum and shared ochre (with dark-mode variants).
+  const PALETTE = ['#1e6f6a', '#2f5fa8', '#7a4e7e', '#b0473a', '#a8741a', '#4f7a2a', '#c2577e', '#4a5560'];
+  const HEX = /^#[0-9a-fA-F]{6}$/;
+  const customColor = key => { const c = S.group?.colors?.[key]; return HEX.test(c || '') ? c : null; };
+  // A CSS color for whoever is responsible: a uid, or 'shared' for an unclaimed shared task.
+  function personColor(key) {
+    if (key === 'shared') return 'var(--shared)';
+    if (key === S.uid) return 'var(--mine)';
+    if (key === others()[0]) return 'var(--theirs)';
+    return customColor(key) || PALETTE[(members().indexOf(key) + 5) % PALETTE.length];
+  }
+  function applyColors() {
+    const root = document.documentElement.style;
+    const set = (lane, key) => {
+      const c = customColor(key);
+      if (c) { root.setProperty(`--${lane}`, c); root.setProperty(`--${lane}-soft`, `color-mix(in srgb, ${c} 22%, var(--surface))`); }
+      else { root.removeProperty(`--${lane}`); root.removeProperty(`--${lane}-soft`); }
+    };
+    set('mine', S.uid); set('theirs', others()[0] || '-'); set('shared', 'shared');
+  }
 
   // ---------- Toast ----------
   let toastTimer;
@@ -97,7 +122,7 @@
       updateGroup(gid, patch) {
         for (const [k, v] of Object.entries(patch)) {
           const [a, b] = k.split('.');
-          if (b) { if (v === undefined) delete group[a][b]; else group[a][b] = v; } else group[a] = v;
+          if (b) { group[a] = group[a] || {}; if (v === undefined) delete group[a][b]; else group[a][b] = v; } else group[a] = v;
         }
         onGroup({ id: gid, ...group }); return Promise.resolve();
       },
@@ -299,10 +324,10 @@
     };
     S.unsub.push(B.watchGroup(gid, g => {
       if (!g) return lost({ code: 'permission-denied' });
-      S.group = g; render();
+      S.group = g; applyColors(); render();
     }, lost));
     S.unsub.push(B.watchTasks(gid, list => { S.open = list; S.loaded = true; render(); openDeepLink();
-      if (S.pendingImport) { const c = S.pendingImport; S.pendingImport = null; openImport(c); } }, list => { S.done = list; if (S.view === 'done') render(); }, lost));
+      if (S.pendingImport) { const c = S.pendingImport; S.pendingImport = null; openImport(c); } }, list => { S.done = list; if (S.view === 'done' || S.view === 'calendar') render(); }, lost));
     refreshPushToken();
   }
 
@@ -397,6 +422,7 @@
   function render() {
     if (!S.group) return;
     if (S.view === 'done') return renderDone();
+    if (S.view === 'calendar') return renderCalendar();
     S.view = 'home';
     const t = now();
     const l = L.lanes(S.open, S.uid, t);
@@ -409,6 +435,7 @@
         <h1>${esc(S.group.name || 'Shared Plate')}</h1>
         <div style="display:flex;gap:8px;align-items:center">
           ${PREVIEW ? '<span class="preview-flag">Preview</span>' : ''}
+          <button class="icon-btn" data-act="calendar" aria-label="Calendar">${ICON.cal}</button>
           <button class="icon-btn" data-act="settings" aria-label="Settings">${ICON.gear}</button>
         </div>
       </header>
@@ -501,6 +528,86 @@
         <div class="meta"><span>${esc(nameOf(x.completedBy))} finished it ${esc(L.fmtWhen(x.completedAt, t))}</span></div></div>
         <button class="btn quiet" style="min-height:44px" data-act="undo" data-id="${esc(x.id)}">Undo</button></div></li>`).join('')}</ul>`
         : '<div class="empty">Nothing finished yet. Swipe a task to the right, or tap its circle, to mark it done.</div>'}`;
+  }
+
+  // ---------- Calendar ----------
+  // A month of tasks with due dates, colored by who is responsible. Repeating tasks show their upcoming dates too.
+  function monthStart(ms) { const d = new Date(ms); d.setHours(0, 0, 0, 0); d.setDate(1); return d.getTime(); }
+  function addMonthsTo(ms, n) { const d = new Date(ms); d.setMonth(d.getMonth() + n); return d.getTime(); }
+  const dayKey = ms => dateStr(ms);
+
+  function calendarItems(from, to) {
+    const out = [];
+    const push = (x, at, extra) => { if (at >= from && at < to) out.push({ x, at, who: L.responsible(x) || 'shared', ...extra }); };
+    for (const x of S.open) {
+      const due = L.toMs(x.dueAt);
+      if (due == null) continue;
+      push(x, due, { snoozed: L.effectiveStatus(x, now()) === 'snoozed' });
+      if (L.normRepeat(x.repeat)) {
+        let next = due;
+        for (let i = 0; i < 62; i++) {
+          next = L.nextDue(next, x.repeat, next);
+          if (!next || next >= to) break;
+          push(x, next, { repeat: true });
+        }
+      }
+    }
+    for (const x of S.done) { const due = L.toMs(x.dueAt); if (due != null) push(x, due, { done: true }); }
+    return out.sort((a, b) => a.at - b.at);
+  }
+
+  function renderCalendar() {
+    S.view = 'calendar';
+    const t = now();
+    if (!S.calMonth) S.calMonth = monthStart(t);
+    if (!S.calDay || monthStart(S.calDay) !== S.calMonth) S.calDay = monthStart(t) === S.calMonth ? L.startOfDay(t) : S.calMonth;
+    const first = new Date(S.calMonth);
+    const gridStart = new Date(first); gridStart.setDate(1 - first.getDay());
+    const weeks = Math.ceil((first.getDay() + new Date(first.getFullYear(), first.getMonth() + 1, 0).getDate()) / 7);
+    const gridEnd = new Date(gridStart); gridEnd.setDate(gridStart.getDate() + weeks * 7);
+    const items = calendarItems(gridStart.getTime(), gridEnd.getTime());
+    const byDay = {};
+    for (const it of items) (byDay[dayKey(it.at)] = byDay[dayKey(it.at)] || []).push(it);
+    const todayKey = dayKey(t), selKey = dayKey(S.calDay);
+    let cells = '';
+    for (let i = 0; i < weeks * 7; i++) {
+      const d = new Date(gridStart); d.setDate(gridStart.getDate() + i);
+      const k = dayKey(d.getTime()), list = byDay[k] || [], inMonth = d.getMonth() === first.getMonth();
+      const marks = list.slice(0, 4).map(it => `<i class="mark${it.done ? ' done' : ''}${it.repeat ? ' rep' : ''}" style="--c:${personColor(it.who)}"></i>`).join('');
+      const peek = list.slice(0, 2).map(it => `<span class="peek${it.done ? ' done' : ''}" style="--c:${personColor(it.who)}">${esc(it.x.title)}</span>`).join('');
+      const label = `${d.toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' })}, ${list.length ? list.length + (list.length === 1 ? ' task' : ' tasks') : 'nothing scheduled'}`;
+      cells += `<button class="day${inMonth ? '' : ' out'}${k === todayKey ? ' is-today' : ''}${k === selKey ? ' sel' : ''}" data-act="cal-day" data-day="${d.getTime()}" aria-label="${esc(label)}" aria-pressed="${k === selKey}">
+        <span class="num">${d.getDate()}</span><span class="marks">${marks}${list.length > 4 ? '<b>+</b>' : ''}</span><span class="peeks">${peek}${list.length > 2 ? `<span class="more-n">+${list.length - 2}</span>` : ''}</span></button>`;
+    }
+    const sel = byDay[selKey] || [];
+    const whoName = k => k === 'shared' ? 'Shared' : k === S.uid ? 'You' : nameOf(k);
+    const legendKeys = [S.uid, ...others(), 'shared'];
+    const monthName = first.toLocaleDateString(undefined, { month: 'long', year: first.getFullYear() === new Date(t).getFullYear() ? undefined : 'numeric' });
+    const selName = new Date(S.calDay).toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' });
+    app.innerHTML = `<header class="top"><button class="icon-btn" data-act="home" aria-label="Back">${ICON.back}</button><h1>Calendar</h1>
+        <button class="icon-btn" data-act="settings" aria-label="Settings">${ICON.gear}</button></header>
+      <div class="cal-nav">
+        <button class="icon-btn" data-act="cal-prev" aria-label="Previous month">${ICON.back}</button>
+        <h2>${esc(monthName)}</h2>
+        <button class="icon-btn" data-act="cal-next" aria-label="Next month">${ICON.next}</button>
+      </div>
+      <div class="legend cal-legend">${legendKeys.map(k => `<span><i class="dot" style="background:${personColor(k)}"></i>${esc(whoName(k))}</span>`).join('')}
+        ${monthStart(t) !== S.calMonth ? '<button class="link" data-act="cal-today">Today</button>' : ''}</div>
+      <div class="cal" role="grid" aria-label="${esc(monthName)}">
+        ${['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map(w => `<div class="wd" aria-hidden="true">${w}</div>`).join('')}
+        ${cells}
+      </div>
+      <section class="cal-agenda">
+        <h3>${esc(selName)}</h3>
+        ${sel.length ? `<ul class="list">${sel.map(it => `<li class="row-wrap"><div class="task cal-task" style="--k:${personColor(it.who)}">
+          <span class="bar"></span>
+          <button class="body" data-act="edit" data-id="${esc(it.x.id)}">
+            <div class="title"${it.done ? ' style="text-decoration:line-through"' : ''}>${esc(it.x.title)}</div>
+            <div class="meta"><span>${esc(whoName(it.who))}</span>${(new Date(it.at).getHours() || new Date(it.at).getMinutes()) ? `<span>${esc(L.fmtTime(it.at))}</span>` : ''}${it.repeat ? `<span>${esc(L.repeatLabel(it.x.repeat))}</span>` : ''}${it.snoozed ? '<span>Snoozed</span>' : ''}${it.done ? '<span>Done</span>' : ''}${!it.done && !it.repeat && L.isOverdue(it.x, t) ? '<span class="late">Overdue</span>' : ''}</div>
+          </button></div></li>`).join('')}</ul>`
+          : '<div class="empty">Nothing scheduled. Tap Add to put something on this day.</div>'}
+      </section>
+      <button class="fab" data-act="add-on-day" aria-label="Add a task on ${esc(selName)}">${ICON.plus}<span>Add</span></button>`;
   }
 
   // =====================================================================
@@ -599,7 +706,7 @@
   const timeStr = ms => { const d = new Date(ms); return `${pad(d.getHours())}:${pad(d.getMinutes())}`; };
   const at8 = ms => { const d = new Date(ms); d.setHours(8, 0, 0, 0); return d.getTime(); };
 
-  function openTask(id) {
+  function openTask(id, preset) {
     const x = id ? findTask(id) : null;
     if (id && !x) return;
     const t = now();
@@ -608,8 +715,9 @@
       repeat: x ? L.normRepeat(x.repeat) : null
     };
     const kind = !f.repeat ? 'none' : (typeof x.repeat === 'string' ? x.repeat : 'custom');
-    const due = x && L.toMs(x.dueAt);
-    const ownerBtn = (val, label, cls) => `<button type="button" class="${cls}" data-owner="${esc(val)}" aria-pressed="${f.owner === val}">${esc(label)}</button>`;
+    const due = x ? L.toMs(x.dueAt) : null;
+    const presetDate = !x && preset?.day ? dateStr(preset.day) : '';
+    const ownerBtn = (val, label, cls) => `<button type="button" class="${cls}" style="--k:${personColor(val)}" data-owner="${esc(val)}" aria-pressed="${f.owner === val}">${esc(label)}</button>`;
     const ownerBtns = [ownerBtn(S.uid, 'Me', 'o-mine'), ...others().map(o => ownerBtn(o, S.group.names?.[o] || 'Them', 'o-theirs')), ownerBtn('shared', 'Shared', 'o-shared')].join('');
     const dn = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
     const wd = f.repeat?.weekdays || (due ? [new Date(due).getDay()] : []);
@@ -618,9 +726,9 @@
       <h2>${x ? 'Edit task' : 'Add a task'}</h2>
       <label class="field"><span>What needs doing?</span><input class="title-input" type="text" name="title" maxlength="200" required value="${esc(x?.title || '')}" placeholder="Call the plumber"></label>
       <div class="field"><span>Whose is it?</span><div class="seg" id="owner-seg">${ownerBtns}</div></div>
-      <details class="more" ${x ? 'open' : ''}><summary>Due date, repeat and note</summary><div class="stack">
+      <details class="more" ${x || presetDate ? 'open' : ''}><summary>Due date, repeat and note</summary><div class="stack">
       <div class="two">
-        <label class="field"><span>Due date</span><input type="date" name="date" value="${due ? dateStr(due) : ''}"></label>
+        <label class="field"><span>Due date</span><input type="date" name="date" value="${due ? dateStr(due) : presetDate}"></label>
         <label class="field"><span>Time</span><input type="time" name="time" value="${due ? timeStr(due) : ''}"></label>
       </div>
       <label class="field"><span>Repeat</span><select name="repeat">
@@ -755,6 +863,16 @@
         <label class="toggle"><span>When a task is due</span><input type="checkbox" id="p-due" ${p.due !== false ? 'checked' : ''}></label>
         <label class="toggle"><span>When a snoozed task comes back</span><input type="checkbox" id="p-back" ${p.back !== false ? 'checked' : ''}></label>
       </section>
+      <section class="settings-section" id="colors"><h3>Colors</h3>
+        <p class="muted small">Used in the lanes and the calendar, on everyone’s phone.</p>
+        ${[...members(), 'shared'].map(k => `<div class="color-row" data-key="${esc(k)}">
+          <span class="color-name"><i class="dot" style="background:${personColor(k)}"></i>${esc(k === 'shared' ? 'Shared' : (S.group.names?.[k] || 'Someone') + (k === S.uid ? ' (you)' : ''))}</span>
+          <div class="swatches" role="group" aria-label="Color for ${esc(k === 'shared' ? 'shared tasks' : S.group.names?.[k] || 'this person')}">
+            ${PALETTE.map(c => `<button type="button" class="swatch" style="background:${c}" data-color="${c}" aria-label="${c}" aria-pressed="${customColor(k) === c}"></button>`).join('')}
+            <label class="swatch custom" aria-label="Custom color"><input type="color" value="${customColor(k) || '#888888'}" data-custom></label>
+          </div></div>`).join('')}
+        <button class="link" data-act="colors-reset" ${S.group.colors && Object.keys(S.group.colors).length ? '' : 'hidden'}>Back to the original colors</button>
+      </section>
       <section class="settings-section" id="invite"><h3>${esc(S.group.name)}</h3>
         <ul class="members">${mem}</ul>
         <p class="muted small">Invite someone with this code or link:</p>
@@ -795,8 +913,32 @@
           B.updateGroup(S.gid, { [`members.${u}`]: undefined, [`names.${u}`]: undefined }).then(() => { closeSheet(); openSettings(); }).catch(er => fail(er, 'remove them'));
         };
       });
+      const setColor = (key, c) => {
+        if (!HEX.test(c)) return;
+        c = c.toLowerCase();
+        const r = sheet.querySelector(`.color-row[data-key="${CSS.escape(key)}"]`);
+        r.querySelectorAll('[data-color]').forEach(b => b.setAttribute('aria-pressed', b.dataset.color === c));
+        r.querySelector('.dot').style.background = c;
+        sheet.querySelector('[data-act=colors-reset]').hidden = false;
+        B.updateGroup(S.gid, { [`colors.${key}`]: c }).then(() => refreshColors(sheet)).catch(er => fail(er, 'save the color'));
+      };
+      sheet.querySelectorAll('.color-row').forEach(r => {
+        r.addEventListener('click', e => { const b = e.target.closest('[data-color]'); if (b) setColor(r.dataset.key, b.dataset.color); });
+        r.querySelector('[data-custom]').addEventListener('change', e => setColor(r.dataset.key, e.target.value));
+      });
       if (focus) sheet.querySelector('#' + focus)?.scrollIntoView({ block: 'start' });
     });
+  }
+
+  // Repaints the Colors section after a change, without closing Settings.
+  function refreshColors(sheet) {
+    setTimeout(() => {
+      sheet.querySelectorAll('.color-row').forEach(r => {
+        const k = r.dataset.key;
+        r.querySelector('.dot').style.background = personColor(k);
+        r.querySelectorAll('[data-color]').forEach(b => b.setAttribute('aria-pressed', customColor(k) === b.dataset.color));
+      });
+    }, 50);
   }
 
   async function enablePush() {
@@ -936,6 +1078,18 @@
       case 'settings': return openSettings();
       case 'close': return closeSheet();
       case 'show-done': S.view = 'done'; window.scrollTo(0, 0); return renderDone();
+      case 'calendar': S.view = 'calendar'; S.calMonth = null; S.calDay = null; window.scrollTo(0, 0); return renderCalendar();
+      case 'cal-prev': S.calMonth = addMonthsTo(S.calMonth, -1); S.calDay = null; return renderCalendar();
+      case 'cal-next': S.calMonth = addMonthsTo(S.calMonth, 1); S.calDay = null; return renderCalendar();
+      case 'cal-today': S.calMonth = null; S.calDay = null; return renderCalendar();
+      case 'cal-day': {
+        const d = +el.dataset.day;
+        if (monthStart(d) !== S.calMonth) S.calMonth = monthStart(d);
+        S.calDay = d; renderCalendar();
+        return document.querySelector('.cal-agenda')?.scrollIntoView({ block: 'nearest', behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' });
+      }
+      case 'add-on-day': return openTask(null, { day: S.calDay });
+      case 'colors-reset': return B.updateGroup(S.gid, { colors: {} }).then(() => { closeSheet(); openSettings('colors'); }).catch(er => fail(er, 'reset the colors'));
       case 'home': closeSheet(); if (S.group && S.view !== 'setup') { S.view = 'home'; return render(); } return pickGroup();
       case 'push-on': return enablePush();
       case 'push-off': return disablePush();
