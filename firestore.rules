@@ -15,7 +15,8 @@ service cloud.firestore {
     // Phase 3 (open sign-up): replace the body with `return signedIn();`.
     function allowed() {
       return signedIn() && request.auth.token.email.lower() in [
-        'office.teumim@gmail.com'
+        'office.teumim@gmail.com',
+        'azw.tcp@gmail.com'
       ];
     }
     function me() { return request.auth.uid; }
