@@ -212,7 +212,7 @@
       total += SHAS[i][1] - 1;
       if (n < total) {
         let daf = SHAS[i][1] + 1 - (total - n);
-        if (i === 36) daf += 21; else if (i === 37) daf += 24; else if (i === 38) daf += 32;
+        if (i === 36) daf += 21; else if (i === 37) daf += 24; else if (i === 38) daf += 33;
         return { masechta: SHAS[i][0], daf };
       }
     }
