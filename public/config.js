@@ -4,7 +4,10 @@
   // Firebase console → Project settings → Your apps → Web app → "firebaseConfig". Paste the values here.
   const FIREBASE = {
     apiKey: "AIzaSyDIXBlpfcQjpLwa_MV_MDFo6rWLXAeiuoc",
-    authDomain: "shared-plate144.firebaseapp.com",
+    // The app's own address, so Google sign-in works inside the iPhone home-screen app (Safari keeps
+    // other sites' storage separate). Needs https://shared-plate144.web.app/__/auth/handler as an authorized
+    // redirect URI on the Google OAuth client (README, "First-time setup").
+    authDomain: "shared-plate144.web.app",
     projectId: "shared-plate144",
     storageBucket: "shared-plate144.firebasestorage.app",
     messagingSenderId: "700423968820",
