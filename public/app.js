@@ -194,6 +194,8 @@
     firebase.initializeApp(C.firebase);
     firebase.firestore().enablePersistence({ synchronizeTabs: true }).catch(() => {});
     const auth = firebase.auth();
+    // Stay signed in on this device until you sign out (Firebase's default, set explicitly).
+    auth.setPersistence(firebase.auth.Auth.Persistence.LOCAL).catch(() => {});
     if (auth.isSignInWithEmailLink(location.href)) finishEmailLink();
     auth.getRedirectResult().catch(e => renderWelcome(signInError(e)));
     auth.onAuthStateChanged(u => { if (u) signedIn(u); else renderWelcome(); });
