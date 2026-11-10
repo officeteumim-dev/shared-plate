@@ -159,6 +159,14 @@ test('unknown fields and oversized titles are refused', async () => {
   await assertFails(setDoc(doc(db.A(), 'groups', G, 'tasks', 'n1'), newTask({ title: '' })));
 });
 
+test('category, priority and order are accepted within limits', async () => {
+  await assertSucceeds(setDoc(doc(db.A(), 'groups', G, 'tasks', 'n1'), newTask({ category: 'Car', priority: 'A1', order: 2000 })));
+  await assertSucceeds(updateDoc(doc(db.B(), 'groups', G, 'tasks', 't1'), { order: 500 }));
+  await assertFails(setDoc(doc(db.A(), 'groups', G, 'tasks', 'n2'), newTask({ priority: 'URGENT' })));
+  await assertFails(setDoc(doc(db.A(), 'groups', G, 'tasks', 'n3'), newTask({ category: 'x'.repeat(41) })));
+  await assertFails(setDoc(doc(db.A(), 'groups', G, 'tasks', 'n4'), newTask({ order: 'first' })));
+});
+
 test('a custom repeat rule is accepted', async () => {
   await assertSucceeds(setDoc(doc(db.A(), 'groups', G, 'tasks', 'n1'), newTask({ repeat: { every: 2, unit: 'week', weekdays: [1, 4] }, dueAt: future() })));
 });

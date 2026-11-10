@@ -26,7 +26,9 @@ async function open(opts = {}) {
   await page.waitForSelector('.lane.mine');
   return { page, errors };
 }
-const laneTitles = (page, lane) => page.$$eval(`section.lane.${lane} .title`, els => els.map(e => e.textContent.trim()));
+// Task titles without the small priority badge in front.
+const titleText = e => { const c = e.cloneNode(true); c.querySelectorAll('.prio').forEach(p => p.remove()); return c.textContent.trim(); };
+const laneTitles = (page, lane) => page.$$eval(`section.lane.${lane} .title`, (els, f) => els.map(new Function('return ' + f)()), titleText.toString());
 
 test('dashboard shows the three lanes with the other person’s name', async () => {
   const { page, errors } = await open();
@@ -40,7 +42,7 @@ test('dashboard shows the three lanes with the other person’s name', async () 
 
 test('today strip lists overdue and today’s tasks, not later ones', async () => {
   const { page } = await open();
-  const chips = await page.$$eval('.today .chip .t', els => els.map(e => e.textContent));
+  const chips = await page.$$eval('.today .chip .t', (els, f) => els.map(new Function('return ' + f)()), titleText.toString());
   assert.ok(chips.includes('Pay the electric bill'));
   assert.ok(chips.includes('Pick up challah'));
   assert.ok(!chips.includes('Renew car registration'));
@@ -48,7 +50,7 @@ test('today strip lists overdue and today’s tasks, not later ones', async () =
 
 test('an old unclaimed shared task gets a gentle nudge', async () => {
   const { page } = await open();
-  const nudges = await page.$$eval('.nudge', els => els.map(e => e.closest('.task').querySelector('.title').textContent));
+  const nudges = await page.$$eval('.nudge', (els, f) => els.map(e => new Function('return ' + f)()(e.closest('.task').querySelector('.title'))), titleText.toString());
   assert.deepEqual(nudges, ['Call the plumber about the kitchen sink']);
 });
 
@@ -232,5 +234,55 @@ test('colors can be changed in Settings and show in the lanes and calendar', asy
   assert.equal(await page.getAttribute('.color-row[data-key=me] [data-color="#2f5fa8"]', 'aria-pressed'), 'true');
   await page.click('[data-act=colors-reset]');
   await page.waitForFunction(() => getComputedStyle(document.documentElement).getPropertyValue('--mine').trim() === '#1e6f6a');
+  assert.deepEqual(errors, []);
+});
+
+test('tasks are grouped by category inside each tile, and the filter shows one category', async () => {
+  const { page, errors } = await open();
+  const heads = await page.$$eval('section.lane.mine .cat-head', els => els.map(e => e.textContent));
+  assert.deepEqual(heads, ['Car', 'House', 'Work', 'Other']);
+  await page.click('.cats [data-cat="Car"]');
+  assert.deepEqual((await laneTitles(page, 'mine')).sort(), ['Renew car registration', 'Rotate the tires']);
+  assert.equal(await page.locator('section.lane.mine .cat-head').count(), 0);
+  await page.click('.cats [data-cat=""]');
+  assert.ok((await laneTitles(page, 'mine')).includes('Pick up challah'));
+  assert.deepEqual(errors, []);
+});
+
+test('a priority code shows in small before the title', async () => {
+  const { page } = await open();
+  const p = page.locator('section.lane.mine .row-wrap:has-text("Pay the electric bill") .prio');
+  assert.equal(await p.textContent(), '1');
+  assert.match(await p.getAttribute('class'), /p1/);
+});
+
+test('adding a task with a category and priority files it under that category', async () => {
+  const { page } = await open();
+  await page.click('.fab');
+  await page.fill('#task-form [name=title]', 'Book the oil change');
+  await page.click('.quick-cats [data-qcat="Car"]');
+  await page.click('.quick-cats [data-qprio="2"]');
+  assert.equal(await page.inputValue('#task-form [name=category]'), 'Car');
+  await page.click('#task-form [type=submit]');
+  await page.waitForFunction(() => [...document.querySelectorAll('section.lane.mine ul[data-sortable="mine/Car"] .title')].some(e => e.textContent.includes('Book the oil change')));
+  assert.equal(await page.textContent('section.lane.mine .row-wrap:has-text("Book the oil change") .prio'), '2');
+});
+
+test('dragging the handle reorders tasks, and the order sticks', async () => {
+  const { page, errors } = await open();
+  const car = () => page.$$eval('ul[data-sortable="mine/Car"] .title', els => els.map(e => e.lastChild.textContent.trim()));
+  assert.deepEqual(await car(), ['Renew car registration', 'Rotate the tires']);
+  const grip = page.locator('ul[data-sortable="mine/Car"] li:nth-child(2) .grip');
+  const box = await grip.boundingBox();
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  await page.mouse.down();
+  for (let i = 1; i <= 8; i++) await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2 - i * 12);
+  await page.mouse.up();
+  await page.waitForFunction(() => document.querySelector('ul[data-sortable="mine/Car"] li .title')?.textContent.includes('Rotate the tires'));
+  assert.deepEqual(await car(), ['Rotate the tires', 'Renew car registration']);
+  // Keyboard: move it back down with the arrow key.
+  await page.focus('ul[data-sortable="mine/Car"] li:nth-child(1) .grip');
+  await page.keyboard.press('ArrowDown');
+  await page.waitForFunction(() => document.querySelector('ul[data-sortable="mine/Car"] li .title')?.textContent.includes('Renew car'));
   assert.deepEqual(errors, []);
 });

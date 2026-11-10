@@ -82,7 +82,7 @@ service cloud.firestore {
           let members = groupData(g).members;
           return d.keys().hasOnly(['title', 'notes', 'owner', 'claimedBy', 'claimedAt', 'status', 'dueAt', 'showAgainOn',
               'repeat', 'createdBy', 'createdAt', 'updatedAt', 'completedAt', 'completedBy', 'notifyAt', 'notifyOnly',
-              'notifyKind', 'nextId', 'repeatOf'])
+              'notifyKind', 'nextId', 'repeatOf', 'category', 'priority', 'order'])
             && str(d.title, 200)
             && optStr(d, 'notes', 2000)
             && d.status in ['open', 'snoozed', 'done']
@@ -93,6 +93,8 @@ service cloud.firestore {
             && optTime(d, 'notifyAt') && optTime(d, 'claimedAt')
             && (d.get('completedBy', null) == null || d.completedBy in members)
             && (!('repeat' in d) || d.repeat in ['none', 'daily', 'weekly', 'monthly'] || d.repeat is map)
+            && optStr(d, 'category', 40) && optStr(d, 'priority', 3)
+            && (!('order' in d) || d.order is number)
             && (d.get('notifyOnly', null) == null || d.notifyOnly is list)
             && d.get('notifyKind', null) in [null, 'due', 'back'];
         }

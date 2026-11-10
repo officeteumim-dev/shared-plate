@@ -26,6 +26,7 @@
     gear: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3.2"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>',
     cal: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="5" width="17" height="15.5" rx="2.5"/><path d="M3.5 10h17M8 3v4M16 3v4"/></svg>',
     next: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg>',
+    grip: '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="9" cy="6" r="1.7"/><circle cx="15" cy="6" r="1.7"/><circle cx="9" cy="12" r="1.7"/><circle cx="15" cy="12" r="1.7"/><circle cx="9" cy="18" r="1.7"/><circle cx="15" cy="18" r="1.7"/></svg>',
     back: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>'
   };
 
@@ -63,6 +64,18 @@
     set('mine', S.uid); set('theirs', others()[0] || '-'); set('shared', 'shared');
   }
 
+  // ---------- Priority and categories ----------
+  // A priority is a short code (up to 3 characters) shown in small before the title. 1/2/3 (or A/B/C) get colors.
+  function prio(x) {
+    const p = String(x.priority || '').trim();
+    if (!p) return '';
+    const level = { '1': 1, a: 1, '2': 2, b: 2, '3': 3, c: 3 }[p.toLowerCase()] || 0;
+    return `<span class="prio p${level}" title="Priority ${esc(p)}">${esc(p)}</span>`;
+  }
+  const DEFAULT_CATS = ['Work', 'Car', 'House'];
+  const allCats = () => { const c = L.categories([...S.open, ...S.done]); for (const d of DEFAULT_CATS) if (!c.some(x => x.toLowerCase() === d.toLowerCase())) c.push(d); return c; };
+  const savedFilter = () => { try { return localStorage.getItem('sp_cat') || ''; } catch (e) { return ''; } };
+
   // ---------- Toast ----------
   let toastTimer;
   function toast(msg, action, fn) {
@@ -94,13 +107,15 @@
     const group = { name: 'Our home', createdBy: me, members: { [me]: 'owner', [her]: 'member' }, names: { [me]: 'Avi', [her]: 'Leah' }, inviteCode: 'PLATE234' };
     const base = { claimedBy: null, status: 'open', repeat: 'none', createdBy: me, createdAt: t0 - 2 * H };
     const tasks = new Map([
-      ['p1', { ...base, title: 'Call the plumber about the kitchen sink', owner: 'shared', createdAt: t0 - 30 * H, notes: 'Number is on the fridge.' }],
+      ['p1', { ...base, title: 'Call the plumber about the kitchen sink', owner: 'shared', createdAt: t0 - 30 * H, notes: 'Number is on the fridge.', category: 'House', priority: '1' }],
       ['p2', { ...base, title: 'Pick up challah', owner: me, dueAt: at(0, 15), repeat: 'weekly' }],
-      ['p3', { ...base, title: 'Pay the electric bill', owner: me, dueAt: at(-1, 18) }],
+      ['p3', { ...base, title: 'Pay the electric bill', owner: me, dueAt: at(-1, 18), category: 'House', priority: '1' }],
       ['p4', { ...base, title: 'Pediatrician appointment for Noa', owner: her, dueAt: at(0, 10, 30), createdBy: her }],
       ['p5', { ...base, title: 'Take out recycling', owner: 'shared', claimedBy: her, claimedAt: t0 - H, dueAt: at(0, 20), repeat: 'weekly' }],
       ['p6', { ...base, title: 'Order birthday gift for Grandma', owner: 'shared', dueAt: at(2, 12) }],
-      ['p7', { ...base, title: 'Renew car registration', owner: me, dueAt: at(5, 9) }],
+      ['p7', { ...base, title: 'Renew car registration', owner: me, dueAt: at(5, 9), category: 'Car', priority: '2' }],
+      ['p10', { ...base, title: 'Send the Q4 invoices', owner: me, category: 'Work', priority: '3' }],
+      ['p11', { ...base, title: 'Rotate the tires', owner: me, category: 'Car' }],
       ['p8', { ...base, title: 'Book the summer camp', owner: her, status: 'snoozed', showAgainOn: at(3, 8), createdBy: her }],
       ['p9', { ...base, title: 'Water the plants', owner: me, status: 'done', completedAt: t0 - 3 * H, completedBy: me }]
     ]);
@@ -425,7 +440,11 @@
     if (S.view === 'calendar') return renderCalendar();
     S.view = 'home';
     const t = now();
-    const l = L.lanes(S.open, S.uid, t);
+    const cats = L.categories(S.open.filter(x => L.effectiveStatus(x, t) === 'open'));
+    if (S.cat === undefined) S.cat = savedFilter();
+    if (S.cat && !cats.some(c => c.toLowerCase() === S.cat.toLowerCase())) S.cat = '';
+    const shown = S.cat ? S.open.filter(x => String(x.category || '').trim().toLowerCase() === S.cat.toLowerCase()) : S.open;
+    const l = L.lanes(shown, S.uid, t);
     const counts = { mine: l.mine.length, theirs: l.theirs.length, shared: l.shared.length };
     const others1 = others().length === 1 ? (S.group.names?.[others()[0]] || 'Them') : 'Theirs';
     const date = new Date(t).toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' });
@@ -452,6 +471,7 @@
         </div>
       </section>
       ${todayN ? `<nav class="today" aria-label="Due today">${l.today.map(x => chip(x, t)).join('')}</nav>` : ''}
+      ${cats.length ? `<nav class="cats" aria-label="Categories">${['', ...cats].map(c => `<button class="cat-chip" data-act="cat" data-cat="${esc(c)}" aria-pressed="${(S.cat || '').toLowerCase() === c.toLowerCase()}">${esc(c || 'All')}</button>`).join('')}</nav>` : ''}
       <div class="lanes">
         ${lane('mine', 'Mine', l.mine, t, 'Nothing on your plate. Nice.')}
         ${lane('theirs', theirsTitle(), l.theirs, t, others().length ? 'Nothing on their plate right now.' : 'Invite someone from Settings to share the plate.')}
@@ -461,7 +481,7 @@
         <ul class="list">${l.snoozed.map(x => row(x, t, L.laneOf(x, S.uid), true)).join('')}</ul></details></section>` : ''}
       <div class="more-row"><button class="btn line" data-act="show-done">Completed</button></div>
       <button class="fab" data-act="add" aria-label="Add a task">${ICON.plus}<span>Add</span></button>`;
-    bindSwipes();
+    bindSwipes(); bindReorder();
   }
 
   function plate(counts, todayN) {
@@ -486,17 +506,22 @@
     const who = k === 'mine' ? '' : k === 'shared' ? ', shared' : `, ${nameOf(L.responsible(x))}`;
     return `<button class="chip ${k}" data-act="edit" data-id="${esc(x.id)}">
       <span class="when ${late ? 'late' : ''}">${late ? 'Overdue, ' : ''}${esc(L.fmtWhen(x.dueAt, t))}${esc(who)}</span>
-      <span class="t">${esc(x.title)}</span></button>`;
+      <span class="t">${prio(x)}${esc(x.title)}</span></button>`;
   }
 
   function lane(k, title, list, t, empty) {
     return `<section class="lane ${k}" aria-label="${esc(title)}">
       <div class="lane-head"><h3>${esc(title)}</h3><span class="count">${list.length}</span></div>
-      ${list.length ? `<ul class="list">${list.map(x => row(x, t, k)).join('')}</ul>` : `<div class="empty">${esc(empty)}</div>`}
+      ${!list.length ? `<div class="empty">${esc(S.cat ? `Nothing in ${S.cat} here.` : empty)}</div>`
+        : (() => {
+          const groups = L.byCategory(list);
+          const named = groups.some(g => g.name) && !S.cat;
+          return groups.map(g => `${named ? `<h4 class="cat-head">${esc(g.name || 'Other')}</h4>` : ''}<ul class="list" data-sortable="${esc(k + '/' + g.name)}">${g.items.map(x => row(x, t, k, false, true)).join('')}</ul>`).join('');
+        })()}
     </section>`;
   }
 
-  function row(x, t, k, snoozed) {
+  function row(x, t, k, snoozed, sortable) {
     const meta = [];
     if (snoozed) meta.push(`Back ${esc(L.fmtWhen(x.showAgainOn, t))}`);
     else if (x.dueAt) meta.push(`<span class="${L.isOverdue(x, t) ? 'late' : ''}">${L.isOverdue(x, t) ? 'Overdue, ' : ''}${esc(L.fmtWhen(x.dueAt, t))}</span>`);
@@ -504,15 +529,17 @@
     if (x.owner === 'shared' && x.claimedBy) meta.push(`<span class="tag">${x.claimedBy === S.uid ? 'Shared, you took it' : `Shared, ${esc(nameOf(x.claimedBy))} took it`}</span>`);
     else if (k === 'theirs' && others().length > 1) meta.push(`<span class="tag">${esc(nameOf(L.responsible(x)))}</span>`);
     if (x.notes) meta.push('Note');
+    if (x.category && (snoozed || S.view === 'calendar')) meta.push(`<span class="tag">${esc(x.category)}</span>`);
     const unclaimed = x.owner === 'shared' && !x.claimedBy && !snoozed;
     const nudge = unclaimed && L.needsNudge(x, t, C.nudgeAfterHours || 24);
     return `<li class="row-wrap lane ${k}" data-id="${esc(x.id)}"><div class="swipe-hint" aria-hidden="true">Done</div>
       <div class="task" data-id="${esc(x.id)}">
         <button class="check" data-act="done" data-id="${esc(x.id)}" aria-label="Mark done: ${esc(x.title)}"><span></span></button>
         <button class="body" data-act="edit" data-id="${esc(x.id)}">
-          <div class="title">${esc(x.title)}</div>${meta.length ? `<div class="meta">${meta.map(m => `<span>${m}</span>`).join('')}</div>` : ''}
+          <div class="title">${prio(x)}${esc(x.title)}</div>${meta.length ? `<div class="meta">${meta.map(m => `<span>${m}</span>`).join('')}</div>` : ''}
         </button>
         ${unclaimed ? `<button class="take" data-act="take" data-id="${esc(x.id)}">Take it</button>` : '<span></span>'}
+        ${sortable ? `<button class="grip" type="button" aria-label="Drag to reorder: ${esc(x.title)}" data-id="${esc(x.id)}">${ICON.grip}</button>` : '<span></span>'}
         ${nudge ? `<div class="nudge">Waiting since ${esc(L.fmtWhen(x.createdAt, t, false))}. Could one of you take it?</div>` : ''}
       </div></li>`;
   }
@@ -601,7 +628,7 @@
         ${sel.length ? `<ul class="list">${sel.map(it => `<li class="row-wrap"><div class="task cal-task" style="--k:${personColor(it.who)}">
           <span class="bar"></span>
           <button class="body" data-act="edit" data-id="${esc(it.x.id)}">
-            <div class="title"${it.done ? ' style="text-decoration:line-through"' : ''}>${esc(it.x.title)}</div>
+            <div class="title"${it.done ? ' style="text-decoration:line-through"' : ''}>${prio(it.x)}${esc(it.x.title)}</div>
             <div class="meta"><span>${esc(whoName(it.who))}</span>${(new Date(it.at).getHours() || new Date(it.at).getMinutes()) ? `<span>${esc(L.fmtTime(it.at))}</span>` : ''}${it.repeat ? `<span>${esc(L.repeatLabel(it.x.repeat))}</span>` : ''}${it.snoozed ? '<span>Snoozed</span>' : ''}${it.done ? '<span>Done</span>' : ''}${!it.done && !it.repeat && L.isOverdue(it.x, t) ? '<span class="late">Overdue</span>' : ''}</div>
           </button></div></li>`).join('')}</ul>`
           : '<div class="empty">Nothing scheduled. Tap Add to put something on this day.</div>'}
@@ -667,7 +694,7 @@
   function bindSwipes() {
     app.querySelectorAll('.task[data-id]').forEach(el => {
       let x0 = 0, y0 = 0, dx = 0, active = false, dragging = false;
-      el.addEventListener('pointerdown', e => { if (e.button) return; active = true; dragging = false; x0 = e.clientX; y0 = e.clientY; dx = 0; });
+      el.addEventListener('pointerdown', e => { if (e.button || e.target.closest('.grip')) return; active = true; dragging = false; x0 = e.clientX; y0 = e.clientY; dx = 0; });
       el.addEventListener('pointermove', e => {
         if (!active) return;
         dx = e.clientX - x0; const dy = e.clientY - y0;
@@ -686,6 +713,59 @@
         if (dragging) { el.dataset.justDragged = '1'; setTimeout(() => { delete el.dataset.justDragged; }, 50); }
       };
       el.addEventListener('pointerup', end); el.addEventListener('pointercancel', end);
+    });
+  }
+
+  // ---------- Drag the handle to reorder within a tile (and category) ----------
+  function bindReorder() {
+    app.querySelectorAll('ul[data-sortable]').forEach(ul => {
+      ul.querySelectorAll('.grip').forEach(grip => {
+        grip.addEventListener('pointerdown', e => {
+          if (e.button) return;
+          e.preventDefault();
+          const li = grip.closest('li'), items = [...ul.children];
+          if (items.length < 2) return;
+          const from = items.indexOf(li), rects = items.map(i => i.getBoundingClientRect());
+          const step = rects.length > 1 ? rects[1].top - rects[0].top : li.offsetHeight + 8;
+          const y0 = e.clientY; let to = from;
+          try { grip.setPointerCapture(e.pointerId); } catch (er) {}
+          li.classList.add('lifted');
+          const move = ev => {
+            const dy = ev.clientY - y0;
+            li.style.transform = `translateY(${dy}px)`;
+            const mid = rects[from].top + rects[from].height / 2 + dy;
+            // The new position is how many of the other tasks now sit above the dragged one.
+            to = rects.filter((r, i) => i !== from && r.top + r.height / 2 < mid).length;
+            items.forEach((it, i) => {
+              if (it === li) return;
+              const shift = from < to && i > from && i <= to ? -step : from > to && i >= to && i < from ? step : 0;
+              it.style.transform = shift ? `translateY(${shift}px)` : '';
+            });
+          };
+          const up = () => {
+            grip.removeEventListener('pointermove', move); grip.removeEventListener('pointerup', up); grip.removeEventListener('pointercancel', up);
+            items.forEach(it => { it.style.transform = ''; }); li.classList.remove('lifted');
+            if (to === from) return;
+            const ids = items.map(i => i.dataset.id);
+            const current = Object.fromEntries(ids.map(id => [id, findTask(id)?.order]));
+            const changes = L.reorder(ids, from, to, current);
+            for (const [id, order] of Object.entries(changes)) B.updateTask(S.gid, id, { order, updatedAt: 'NOW' });
+            if (navigator.vibrate) navigator.vibrate(8);
+          };
+          grip.addEventListener('pointermove', move); grip.addEventListener('pointerup', up); grip.addEventListener('pointercancel', up);
+        });
+        // Keyboard: arrow keys move the task up or down.
+        grip.addEventListener('keydown', e => {
+          if (e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return;
+          e.preventDefault();
+          const items = [...ul.children], ids = items.map(i => i.dataset.id), from = ids.indexOf(grip.dataset.id);
+          const to = Math.max(0, Math.min(ids.length - 1, from + (e.key === 'ArrowUp' ? -1 : 1)));
+          if (to === from) return;
+          const current = Object.fromEntries(ids.map(id => [id, findTask(id)?.order]));
+          for (const [id, order] of Object.entries(L.reorder(ids, from, to, current))) B.updateTask(S.gid, id, { order, updatedAt: 'NOW' });
+          setTimeout(() => app.querySelector(`.grip[data-id="${CSS.escape(grip.dataset.id)}"]`)?.focus(), 30);
+        });
+      });
     });
   }
 
@@ -725,6 +805,13 @@
       <h2>${x ? 'Edit task' : 'Add a task'}</h2>
       <label class="field"><span>What needs doing?</span><input class="title-input" type="text" name="title" maxlength="200" required value="${esc(x?.title || '')}" placeholder="Call the plumber"></label>
       <div class="field"><span>Whose is it?</span><div class="seg" id="owner-seg">${ownerBtns}</div></div>
+      <div class="cat-prio">
+        <label class="field"><span>Category</span><input type="text" name="category" maxlength="40" list="cat-list" autocomplete="off" value="${esc(x?.category || (!x && S.cat ? S.cat : ''))}" placeholder="Work, Car, House…">
+          <datalist id="cat-list">${allCats().map(c => `<option value="${esc(c)}">`).join('')}</datalist></label>
+        <label class="field prio-field"><span>Priority</span><input type="text" name="priority" maxlength="3" autocomplete="off" autocapitalize="characters" value="${esc(x?.priority || '')}" placeholder="—"></label>
+      </div>
+      <div class="quick-cats">${allCats().slice(0, 8).map(c => `<button type="button" class="cat-chip small" data-qcat="${esc(c)}">${esc(c)}</button>`).join('')}
+        <span class="sep"></span>${['1', '2', '3'].map(p => `<button type="button" class="cat-chip small" data-qprio="${p}" aria-label="Priority ${p}">${prio({ priority: p })}</button>`).join('')}</div>
       <details class="more" ${x || presetDate ? 'open' : ''}><summary>Due date, repeat and note</summary><div class="stack">
       <div class="two">
         <label class="field"><span>Due date</span><input type="date" name="date" value="${due ? dateStr(due) : presetDate}"></label>
@@ -762,6 +849,11 @@
         f.owner = b.dataset.owner;
         sheet.querySelectorAll('[data-owner]').forEach(o => o.setAttribute('aria-pressed', o === b));
       };
+      sheet.querySelector('.quick-cats').onclick = e => {
+        const c = e.target.closest('[data-qcat]'), p = e.target.closest('[data-qprio]');
+        if (c) form.category.value = form.category.value === c.dataset.qcat ? '' : c.dataset.qcat;
+        if (p) form.priority.value = form.priority.value === p.dataset.qprio ? '' : p.dataset.qprio;
+      };
       form.repeat.onchange = () => { sheet.querySelector('#custom').hidden = form.repeat.value !== 'custom'; };
       form.unit.onchange = () => { sheet.querySelector('#days').hidden = form.unit.value !== 'week'; };
       sheet.querySelector('#days').onclick = e => {
@@ -798,6 +890,7 @@
         }
         const data = {
           title, notes: form.notes.value.trim(), owner: f.owner,
+          category: form.category.value.trim().slice(0, 40), priority: form.priority.value.trim().slice(0, 3),
           claimedBy: f.owner === 'shared' ? (x?.owner === 'shared' ? (x.claimedBy || null) : null) : null,
           dueAt, repeat, updatedAt: 'NOW', notifyOnly: null, notifyKind: null
         };
@@ -1007,7 +1100,8 @@
       let status = ['open', 'snoozed', 'done'].includes(x.status) ? x.status : 'open';
       const back = day(x.back, 8);
       if (status === 'snoozed' && !(back > now())) status = 'open';
-      return { title, status, back: status === 'snoozed' ? back : null, due: day(x.due, 9), notes: String(x.notes || '').slice(0, 2000), shared: x.owner === 'shared' };
+      return { title, status, back: status === 'snoozed' ? back : null, due: day(x.due, 9), notes: String(x.notes || '').slice(0, 2000), shared: x.owner === 'shared',
+        category: String(x.category || '').trim().slice(0, 40), priority: String(x.priority || '').trim().slice(0, 3) };
     }).filter(Boolean);
   }
 
@@ -1033,7 +1127,7 @@
         for (const x of fresh) {
           const d = {
             title: x.title, notes: x.notes, owner: x.shared ? 'shared' : S.uid, claimedBy: null, status: x.status,
-            dueAt: x.due, repeat: 'none', createdBy: S.uid, createdAt: 'NOW', updatedAt: 'NOW'
+            dueAt: x.due, repeat: 'none', createdBy: S.uid, createdAt: 'NOW', updatedAt: 'NOW', category: x.category, priority: x.priority
           };
           if (x.status === 'snoozed') d.showAgainOn = x.back;
           if (x.status === 'done') { d.completedAt = 'NOW'; d.completedBy = S.uid; }
@@ -1077,6 +1171,7 @@
       case 'settings': return openSettings();
       case 'close': return closeSheet();
       case 'show-done': S.view = 'done'; window.scrollTo(0, 0); return renderDone();
+      case 'cat': S.cat = el.dataset.cat; try { localStorage.setItem('sp_cat', S.cat); } catch (er) {} return render();
       case 'calendar': S.view = 'calendar'; S.calMonth = null; S.calDay = null; window.scrollTo(0, 0); return renderCalendar();
       case 'cal-prev': S.calMonth = addMonthsTo(S.calMonth, -1); S.calDay = null; return renderCalendar();
       case 'cal-next': S.calMonth = addMonthsTo(S.calMonth, 1); S.calDay = null; return renderCalendar();
