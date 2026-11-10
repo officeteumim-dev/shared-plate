@@ -151,6 +151,8 @@
       updateTask(gid, id, patch) { tasks.set(id, { ...tasks.get(id), ...resolve(patch) }); emit(); return Promise.resolve(); },
       deleteTask(gid, id) { tasks.delete(id); emit(); return Promise.resolve(); },
       createGroup() { return Promise.resolve('demo'); },
+      createFeed(token) { profile = { ...profile, feedToken: token }; onProfile(profile); return Promise.resolve(); },
+      deleteFeed() { profile = { ...profile, feedToken: null }; onProfile(profile); return Promise.resolve(); },
       joinGroup() { return Promise.resolve({ groupId: 'demo', name: group.name }); },
       leaveGroup() { return Promise.resolve(); },
       signOut() { location.href = location.pathname; }
@@ -210,6 +212,17 @@
       async leaveGroup(gid) {
         await db.doc(`groups/${gid}`).update({ [`members.${uid}`]: FV.delete(), [`names.${uid}`]: FV.delete() });
         await db.doc(`users/${uid}`).set({ groupIds: FV.arrayRemove(gid) }, { merge: true });
+      },
+      // A calendar feed: feeds/<token> tells the calendarFeed function whose tasks to publish.
+      async createFeed(token, gid) {
+        const batch = db.batch();
+        batch.set(db.doc(`feeds/${token}`), { uid, groupId: gid, createdAt: FV.serverTimestamp() });
+        batch.set(db.doc(`users/${uid}`), { feedToken: token }, { merge: true });
+        await batch.commit();
+      },
+      async deleteFeed(token) {
+        if (token) await db.doc(`feeds/${token}`).delete().catch(() => {});
+        await db.doc(`users/${uid}`).set({ feedToken: null }, { merge: true });
       },
       forgetGroup(gid) { return db.doc(`users/${uid}`).set({ groupIds: FV.arrayRemove(gid) }, { merge: true }); },
       saveToken(token, platform) {
@@ -964,6 +977,7 @@
       <section class="settings-section" id="calendar-settings"><h3>Calendar</h3>
         ${Hb && Hb.supported ? `<label class="toggle"><span>Show Hebrew dates and holidays</span><input type="checkbox" id="p-hebrew" ${hebOn() ? 'checked' : ''}></label>
         <p class="muted small">Yamim Tovim, fasts, Chanukah, Purim and Rosh Chodesh, as kept outside Israel.</p>` : '<p class="muted small">This browser can’t show Hebrew dates.</p>'}
+        <div id="feed-box">${feedHtml()}</div>
       </section>
       <section class="settings-section" id="colors"><h3>Colors</h3>
         <p class="muted small">Used in the lanes and the calendar, on everyone’s phone.</p>
@@ -1035,6 +1049,37 @@
       });
       if (focus) sheet.querySelector('#' + focus)?.scrollIntoView({ block: 'start' });
     });
+  }
+
+  // ---------- Calendar feed (Google Calendar / Apple Calendar) ----------
+  function feedUrls(who) {
+    const token = S.profile.feedToken;
+    const https = `${location.origin}/cal/${token}.ics${who === 'all' ? '?who=all' : ''}`;
+    const webcal = https.replace(/^https?:/, 'webcal:');
+    return { https, webcal, google: `https://calendar.google.com/calendar/r?cid=${encodeURIComponent(webcal)}` };
+  }
+  function feedHtml() {
+    if (!S.profile.feedToken) return `<div class="feed">
+      <h4>Show tasks in your calendar</h4>
+      <p class="muted small">Get a private link that Google Calendar or Apple Calendar can subscribe to. Tasks with a due date show up there and stay up to date.</p>
+      <button class="btn quiet" data-act="feed-make">Make a calendar link</button></div>`;
+    const who = S.feedWho || 'mine', u = feedUrls(who);
+    return `<div class="feed">
+      <h4>Show tasks in your calendar</h4>
+      <div class="seg" role="group" aria-label="Which tasks">
+        <button type="button" data-act="feed-who" data-who="mine" aria-pressed="${who === 'mine'}">Mine and shared</button>
+        <button type="button" data-act="feed-who" data-who="all" aria-pressed="${who === 'all'}">Everyone’s</button>
+      </div>
+      <a class="btn block" href="${esc(u.webcal)}">Add to Apple Calendar</a>
+      <a class="btn quiet block" href="${esc(u.google)}" target="_blank" rel="noopener">Add to Google Calendar</a>
+      <button class="btn line block" data-act="feed-copy" data-url="${esc(u.https)}">Copy link</button>
+      <p class="muted small">Calendars check for changes on their own schedule: Apple about every hour, Google every few hours. In Google Calendar on a phone, open the link in a browser, since the app can’t add calendars by link.</p>
+      <p class="muted small">Anyone with the link can see these tasks. <button class="link" data-act="feed-off">Turn off this link</button></p></div>`;
+  }
+  const refreshFeed = () => { const box = $('#feed-box'); if (box) box.innerHTML = feedHtml(); };
+  function makeFeedToken() {
+    const a = new Uint8Array(24); crypto.getRandomValues(a);
+    return btoa(String.fromCharCode(...a)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
   }
 
   // Repaints the Colors section after a change, without closing Settings.
@@ -1187,6 +1232,16 @@
       case 'close': return closeSheet();
       case 'show-done': S.view = 'done'; window.scrollTo(0, 0); return renderDone();
       case 'cat': S.cat = el.dataset.cat; try { localStorage.setItem('sp_cat', S.cat); } catch (er) {} return render();
+      case 'feed-make': {
+        const token = makeFeedToken();
+        el.disabled = true;
+        return B.createFeed(token, S.gid).then(() => { S.profile.feedToken = token; refreshFeed(); }).catch(er => { el.disabled = false; fail(er, 'make the link'); });
+      }
+      case 'feed-who': S.feedWho = el.dataset.who; return refreshFeed();
+      case 'feed-copy': return navigator.clipboard?.writeText(el.dataset.url).then(() => toast('Calendar link copied.'), () => toast(el.dataset.url));
+      case 'feed-off':
+        if (!confirm('Turn off this calendar link? Calendars subscribed to it will stop updating.')) return;
+        return B.deleteFeed(S.profile.feedToken).then(() => { S.profile.feedToken = null; refreshFeed(); toast('Calendar link turned off.'); }).catch(er => fail(er, 'turn off the link'));
       case 'calendar': S.view = 'calendar'; S.calMonth = null; S.calDay = null; window.scrollTo(0, 0); return renderCalendar();
       case 'cal-prev': S.calMonth = addMonthsTo(S.calMonth, -1); S.calDay = null; return renderCalendar();
       case 'cal-next': S.calMonth = addMonthsTo(S.calMonth, 1); S.calDay = null; return renderCalendar();

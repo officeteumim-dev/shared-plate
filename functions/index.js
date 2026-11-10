@@ -2,14 +2,16 @@
 // - sendReminders: every 5 minutes, sends push notifications for tasks that are due and snoozed tasks that come back,
 //   respecting each person's quiet hours and notification preferences.
 // - joinGroup: joins a group with its invite code (the code is checked here, so non-members never read groups).
+// - calendarFeed: a private .ics feed of scheduled tasks (/cal/<token>.ics) for Google Calendar or Apple Calendar.
 // Deployed by GitHub Actions (.github/workflows/deploy.yml). public/logic.js is copied in on deploy.
 'use strict';
 const { setGlobalOptions } = require('firebase-functions/v2');
-const { onCall, HttpsError } = require('firebase-functions/v2/https');
+const { onCall, onRequest, HttpsError } = require('firebase-functions/v2/https');
 const { onSchedule } = require('firebase-functions/v2/scheduler');
 const { defineString } = require('firebase-functions/params');
 const logger = require('firebase-functions/logger');
 const admin = require('firebase-admin');
+const { buildIcs } = require('./ics');
 let L;
 try { L = require('./logic'); } catch (e) { L = require('../public/logic.js'); }
 
@@ -118,4 +120,36 @@ exports.sendReminders = onSchedule({ schedule: 'every 5 minutes', timeoutSeconds
     }
   }
   logger.info('Reminders', stats);
+});
+
+// ---------- Calendar feed ----------
+// /cal/<token>.ics?who=mine|all. The token is a long random id created in the app (feeds/<token>: uid, groupId).
+// Only tasks with a due date are included; repeats become recurring events.
+exports.calendarFeed = onRequest({ invoker: 'public', memory: '256MiB' }, async (req, res) => {
+  const m = /\/cal\/([A-Za-z0-9_-]{20,64})(?:\.ics)?$/.exec(req.path || '');
+  if (!m) { res.status(404).send('Not found'); return; }
+  const feed = (await db.doc(`feeds/${m[1]}`).get()).data();
+  if (!feed) { res.status(404).send('This calendar link was turned off. Make a new one in Shared Plate → Settings.'); return; }
+  const group = (await db.doc(`groups/${feed.groupId}`).get()).data();
+  if (!group || !(group.members || {})[feed.uid]) { res.status(404).send('Not found'); return; }
+  const user = (await db.doc(`users/${feed.uid}`).get()).data() || {};
+  const who = req.query.who === 'all' ? 'all' : 'mine';
+  const snap = await db.collection(`groups/${feed.groupId}/tasks`).where('status', 'in', ['open', 'snoozed']).get();
+  const name = uid => uid === feed.uid ? '' : (group.names || {})[uid] || '';
+  const tasks = [];
+  snap.forEach(d => {
+    const t = d.data(), dueAt = L.toMs(t.dueAt);
+    if (dueAt == null) return;
+    const resp = L.responsible(t);
+    if (who === 'mine' && resp !== feed.uid && resp !== null) return; // mine + unclaimed shared
+    tasks.push({ id: d.id, title: t.title, notes: t.notes, dueAt, repeat: t.repeat, priority: t.priority, category: t.category,
+      who: who === 'all' ? (resp ? name(resp) : 'Shared') : (resp ? '' : 'Shared') });
+  });
+  const siteUrl = SITE_URL.value() || `https://${process.env.GCLOUD_PROJECT}.web.app`;
+  const ics = buildIcs(tasks, { name: who === 'all' ? `${group.name || 'Shared Plate'} (everyone)` : `${group.name || 'Shared Plate'} (mine)`,
+    tz: user.tz || 'America/New_York', now: Date.now(), siteUrl, groupId: feed.groupId });
+  res.set('Content-Type', 'text/calendar; charset=utf-8');
+  res.set('Cache-Control', 'private, max-age=300');
+  res.set('Content-Disposition', 'inline; filename="shared-plate.ics"');
+  res.send(ics);
 });

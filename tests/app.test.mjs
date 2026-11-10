@@ -302,3 +302,18 @@ test('Hebrew dates and holidays appear when turned on in Settings', async () => 
   assert.ok(await page.locator('.day.sel .hol-dot').count() === 1);
   assert.deepEqual(errors, []);
 });
+
+test('Settings makes a calendar link for Apple and Google Calendar, and can turn it off', async () => {
+  const { page, errors } = await open();
+  page.on('dialog', d => d.accept());
+  await page.click('[data-act=settings]');
+  await page.click('[data-act=feed-make]');
+  const apple = await page.getAttribute('.feed a:has-text("Apple")', 'href');
+  assert.match(apple, /^webcal:\/\/localhost:\d+\/cal\/[A-Za-z0-9_-]{32}\.ics$/);
+  assert.match(await page.getAttribute('.feed a:has-text("Google")', 'href'), /^https:\/\/calendar\.google\.com\/calendar\/r\?cid=webcal%3A%2F%2F/);
+  await page.click('[data-act=feed-who][data-who=all]');
+  assert.match(await page.getAttribute('.feed a:has-text("Apple")', 'href'), /\?who=all$/);
+  await page.click('[data-act=feed-off]');
+  await page.waitForSelector('[data-act=feed-make]');
+  assert.deepEqual(errors, []);
+});

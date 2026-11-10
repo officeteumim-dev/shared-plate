@@ -334,3 +334,8 @@ section.lane .list + .cat-head { margin-top: 14px; }
   .hol-name.fast { color: #5b4a38; }
   .hol-name.minor { color: var(--ink-2); font-weight: 400; }
 }
+.feed { display: grid; gap: 10px; border-top: 1.5px solid var(--line); padding-top: 14px; margin-top: 4px; }
+.feed h4 { font-size: 16px; margin: 0; font-family: var(--display); }
+.feed p { margin: 0; }
+.feed a.btn { text-decoration: none; }
+.feed .link { min-height: 0; padding: 0; }

@@ -185,6 +185,19 @@ test('you can read and write only your own user record', async () => {
   await assertFails(setDoc(doc(db.B(), 'users', B), { isAdmin: true }));
 });
 
+test('calendar feeds: you can make one for your own household only, and only you can see or delete it', async () => {
+  const tok = 'abcdefghijklmnopqrstuvwxyz012345';
+  await assertSucceeds(setDoc(doc(db.B(), 'feeds', tok), { uid: B, groupId: G, createdAt: serverTimestamp() }));
+  await assertSucceeds(getDoc(doc(db.B(), 'feeds', tok)));
+  await assertFails(getDoc(doc(db.A(), 'feeds', tok)));
+  await assertFails(deleteDoc(doc(db.A(), 'feeds', tok)));
+  await assertSucceeds(deleteDoc(doc(db.B(), 'feeds', tok)));
+  await assertFails(setDoc(doc(db.C(), 'feeds', tok + 'x'), { uid: C, groupId: G, createdAt: serverTimestamp() }));
+  await assertFails(setDoc(doc(db.B(), 'feeds', tok + 'y'), { uid: A, groupId: G, createdAt: serverTimestamp() }));
+  await assertFails(setDoc(doc(db.B(), 'feeds', 'short'), { uid: B, groupId: G, createdAt: serverTimestamp() }));
+  await assertSucceeds(setDoc(doc(db.B(), 'users', B), { displayName: 'Leah', feedToken: tok }));
+});
+
 test('anything outside groups and users is closed', async () => {
   await assertFails(setDoc(doc(db.A(), 'config', 'x'), { a: 1 }));
   await assertFails(getDoc(doc(db.A(), 'config', 'x')));
