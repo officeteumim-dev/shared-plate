@@ -135,11 +135,12 @@ test('settings show quiet hours and the invite code', async () => {
   assert.deepEqual(errors, []);
 });
 
-test('the phone layout has no sideways scrolling, in light and dark mode', async () => {
+test('the phone layout has no sideways scrolling, and stays light when the phone is in dark mode', async () => {
   for (const dark of [false, true]) {
     const { page } = await open({ dark });
     const over = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
     assert.ok(over <= 0, `page is ${over}px too wide`);
+    assert.equal(await page.evaluate(() => getComputedStyle(document.body).backgroundColor), 'rgb(238, 242, 240)');
   }
 });
 

@@ -478,8 +478,7 @@
     }
     return `<svg class="plate" viewBox="0 0 112 112" role="img" aria-label="${counts.mine} mine, ${counts.theirs} theirs, ${counts.shared} shared">
       <circle class="rim" cx="56" cy="56" r="55"/>${arcs}<circle class="well" cx="56" cy="56" r="34"/>
-      <text x="56" y="61" text-anchor="middle" font-size="26" font-weight="700">${total}</text>
-      <text x="56" y="77" text-anchor="middle" font-size="11" fill="var(--ink-2)" style="fill:var(--ink-2)">open</text></svg>`;
+      <text x="56" y="67" text-anchor="middle" font-size="32" font-weight="700">${total}</text></svg>`;
   }
 
   function chip(x, t) {
