@@ -628,8 +628,75 @@
     return out.sort((a, b) => a.at - b.at);
   }
 
+  const whoName = k => k === 'shared' ? 'Shared' : k === S.uid ? 'You' : nameOf(k);
+  // One task in a day's list (the agenda under the month, and each day of the week view).
+  function agendaItem(it, t) {
+    const at = new Date(it.at), timed = at.getHours() || at.getMinutes();
+    return `<li class="row-wrap"><div class="task cal-task" style="--k:${personColor(it.who)}">
+      <span class="bar"></span>
+      <button class="body" data-act="edit" data-id="${esc(it.x.id)}">
+        <div class="title"${it.done ? ' style="text-decoration:line-through"' : ''}>${prio(it.x)}${esc(it.x.title)}</div>
+        <div class="meta"><span>${esc(whoName(it.who))}</span>${timed ? `<span>${esc(L.fmtTime(it.at))}</span>` : ''}${it.repeat ? `<span>${esc(L.repeatLabel(it.x.repeat))}</span>` : ''}${it.snoozed ? '<span>Snoozed</span>' : ''}${it.done ? '<span>Done</span>' : ''}${!it.done && !it.repeat && L.isOverdue(it.x, t) ? '<span class="late">Overdue</span>' : ''}</div>
+      </button></div></li>`;
+  }
+  const modeSwitch = () => `<div class="seg cal-mode" role="group" aria-label="Calendar view">
+      <button type="button" data-act="cal-mode" data-mode="week" aria-pressed="${S.calMode === 'week'}">Week</button>
+      <button type="button" data-act="cal-mode" data-mode="month" aria-pressed="${S.calMode === 'month'}">Month</button></div>`;
+  const weekStartOf = ms => { const d = new Date(L.startOfDay(ms)); d.setDate(d.getDate() - d.getDay()); return d.getTime(); };
+
+  // The week view (the default on phones): seven days as a list, so task titles fit.
+  function renderWeek() {
+    const t = now();
+    if (!S.calDay) S.calDay = L.startOfDay(t);
+    const ws = weekStartOf(S.calDay);
+    const we = new Date(ws); we.setDate(we.getDate() + 7);
+    const items = calendarItems(ws, we.getTime());
+    const byDay = {};
+    for (const it of items) (byDay[dayKey(it.at)] = byDay[dayKey(it.at)] || []).push(it);
+    const heb = hebOn(), showParsha = parshaOn(), showDaf = dafOn(), todayKey = dayKey(t);
+    const last = new Date(we); last.setDate(last.getDate() - 1);
+    const sameMonth = new Date(ws).getMonth() === last.getMonth();
+    const range = `${new Date(ws).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })} – ${last.toLocaleDateString(undefined, sameMonth ? { day: 'numeric' } : { month: 'short', day: 'numeric' })}`;
+    let days = '';
+    for (let i = 0; i < 7; i++) {
+      const d = new Date(ws); d.setDate(d.getDate() + i);
+      const ms = d.getTime(), k = dayKey(ms), list = byDay[k] || [];
+      const hs = heb ? Hb.holidays(ms) : [];
+      const extras = [
+        heb ? `<span class="heb" lang="he" dir="rtl">${esc(Hb.format(ms))}</span>` : '',
+        hs.map(h => `<span class="hol ${h.kind}">${esc(h.name)}</span>`).join(''),
+        showParsha && d.getDay() === 6 && Hb.parsha(ms) ? `<span class="wk-learn"><b>${esc(Hb.parsha(ms))}</b></span>` : '',
+        showDaf ? `<span class="wk-learn">${esc(Hb.dafYomi(ms).masechta)} ${Hb.dafYomi(ms).daf}</span>` : ''
+      ].join('');
+      days += `<section class="wk-day${k === todayKey ? ' is-today' : ''}" data-day="${ms}">
+        <div class="wk-head">
+          <div class="wk-date"><span class="wk-dow">${d.toLocaleDateString(undefined, { weekday: 'short' })}</span><span class="wk-num">${d.getDate()}</span></div>
+          <div class="wk-extras">${extras}</div>
+          <button class="wk-add" data-act="add-on" data-day="${ms}" aria-label="Add a task on ${esc(d.toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' }))}">${ICON.plus}</button>
+        </div>
+        ${list.length ? `<ul class="list">${list.map(it => agendaItem(it, t)).join('')}</ul>` : ''}
+      </section>`;
+    }
+    const legendKeys = [S.uid, ...others(), 'shared'];
+    const hebRange = heb ? (() => { const a = Hb.hebrewMonthName(ws), z = Hb.hebrewMonthName(last.getTime()); return (a === z ? a : `${a} – ${z}`) + ' ' + Hb.gematria(Hb.parts(last.getTime()).year); })() : '';
+    app.innerHTML = `<header class="top"><button class="icon-btn" data-act="home" aria-label="Back">${ICON.back}</button><h1>Calendar</h1>
+        <button class="icon-btn" data-act="settings" aria-label="Settings">${ICON.gear}</button></header>
+      ${modeSwitch()}
+      <div class="cal-nav">
+        <button class="icon-btn" data-act="cal-prev" aria-label="Previous week">${ICON.back}</button>
+        <div class="cal-title"><h2>${esc(range)}</h2>${heb ? `<span class="heb" lang="he" dir="rtl">${esc(hebRange)}</span>` : ''}</div>
+        <button class="icon-btn" data-act="cal-next" aria-label="Next week">${ICON.next}</button>
+      </div>
+      <div class="legend cal-legend">${legendKeys.map(k => `<span><i class="dot" style="background:${personColor(k)}"></i>${esc(whoName(k))}</span>`).join('')}
+        ${weekStartOf(t) !== ws ? '<button class="link" data-act="cal-today">This week</button>' : ''}</div>
+      <div class="week">${days}</div>
+      <button class="fab" data-act="add-on" data-day="${weekStartOf(t) === ws ? L.startOfDay(t) : ws}" aria-label="Add a task">${ICON.plus}<span>Add</span></button>`;
+  }
+
   function renderCalendar() {
     S.view = 'calendar';
+    if (!S.calMode) S.calMode = innerWidth < 720 ? 'week' : 'month';
+    if (S.calMode === 'week') return renderWeek();
     const t = now();
     if (!S.calMonth) S.calMonth = monthStart(t);
     if (!S.calDay || monthStart(S.calDay) !== S.calMonth) S.calDay = monthStart(t) === S.calMonth ? L.startOfDay(t) : S.calMonth;
@@ -652,12 +719,12 @@
         <span class="num">${d.getDate()}</span>${heb ? `<span class="hd" lang="he">${esc(Hb.dayLetters(d.getTime()))}</span>${(() => { const hs = Hb.holidays(d.getTime()).filter(h => h.kind !== 'erev'); return hs.length ? `<span class="hol-dot ${hs[0].kind}" title="${esc(hs.map(h => h.name).join(', '))}"></span><span class="hol-name ${hs[0].kind}">${esc(hs[0].name)}</span>` : ''; })()}` : ''}${showParsha && d.getDay() === 6 && Hb.parsha(d.getTime()) ? `<span class="pname">${esc(Hb.parsha(d.getTime()))}</span>` : ''}<span class="marks">${marks}${list.length > 4 ? '<b>+</b>' : ''}</span><span class="peeks">${peek}${list.length > 2 ? `<span class="more-n">+${list.length - 2}</span>` : ''}</span></button>`;
     }
     const sel = byDay[selKey] || [];
-    const whoName = k => k === 'shared' ? 'Shared' : k === S.uid ? 'You' : nameOf(k);
     const legendKeys = [S.uid, ...others(), 'shared'];
     const monthName = first.toLocaleDateString(undefined, { month: 'long', year: first.getFullYear() === new Date(t).getFullYear() ? undefined : 'numeric' });
     const selName = new Date(S.calDay).toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' });
     app.innerHTML = `<header class="top"><button class="icon-btn" data-act="home" aria-label="Back">${ICON.back}</button><h1>Calendar</h1>
         <button class="icon-btn" data-act="settings" aria-label="Settings">${ICON.gear}</button></header>
+      ${modeSwitch()}
       <div class="cal-nav">
         <button class="icon-btn" data-act="cal-prev" aria-label="Previous month">${ICON.back}</button>
         <div class="cal-title"><h2>${esc(monthName)}</h2>${heb ? `<span class="heb" lang="he" dir="rtl">${esc((() => { const a = Hb.hebrewMonthName(gridStart.getTime() + 7 * DAYMS), z = Hb.hebrewMonthName(gridEnd.getTime() - 7 * DAYMS); return (a === z ? a : `${a} – ${z}`) + ' ' + Hb.gematria(Hb.parts(gridEnd.getTime() - 7 * DAYMS).year); })())}</span>` : ''}</div>
@@ -673,12 +740,7 @@
         <h3>${esc(selName)}</h3>
         ${heb ? `<p class="heb-line"><span class="heb" lang="he" dir="rtl">${esc(Hb.format(S.calDay, true))}</span>${holidayHtml(S.calDay)}</p>` : ''}
         ${showParsha || showDaf ? `<p class="learning">${showParsha && Hb.parsha(S.calDay) ? `<span><b>Parshas ${esc(Hb.parsha(S.calDay))}</b>${new Date(S.calDay).getDay() === 6 ? '' : ' this Shabbos'}</span>` : ''}${showDaf ? `<span>Daf Yomi: <b>${esc(Hb.dafYomi(S.calDay).masechta)} ${Hb.dafYomi(S.calDay).daf}</b></span>` : ''}</p>` : ''}
-        ${sel.length ? `<ul class="list">${sel.map(it => `<li class="row-wrap"><div class="task cal-task" style="--k:${personColor(it.who)}">
-          <span class="bar"></span>
-          <button class="body" data-act="edit" data-id="${esc(it.x.id)}">
-            <div class="title"${it.done ? ' style="text-decoration:line-through"' : ''}>${prio(it.x)}${esc(it.x.title)}</div>
-            <div class="meta"><span>${esc(whoName(it.who))}</span>${(new Date(it.at).getHours() || new Date(it.at).getMinutes()) ? `<span>${esc(L.fmtTime(it.at))}</span>` : ''}${it.repeat ? `<span>${esc(L.repeatLabel(it.x.repeat))}</span>` : ''}${it.snoozed ? '<span>Snoozed</span>' : ''}${it.done ? '<span>Done</span>' : ''}${!it.done && !it.repeat && L.isOverdue(it.x, t) ? '<span class="late">Overdue</span>' : ''}</div>
-          </button></div></li>`).join('')}</ul>`
+        ${sel.length ? `<ul class="list">${sel.map(it => agendaItem(it, t)).join('')}</ul>`
           : '<div class="empty">Nothing scheduled. Tap Add to put something on this day.</div>'}
       </section>
       <button class="fab" data-act="add-on-day" aria-label="Add a task on ${esc(selName)}">${ICON.plus}<span>Add</span></button>`;
@@ -1393,10 +1455,21 @@
       case 'feed-off':
         if (!confirm('Turn off this calendar link? Calendars subscribed to it will stop updating.')) return;
         return B.deleteFeed(S.profile.feedToken).then(() => { S.profile.feedToken = null; refreshFeed(); toast('Calendar link turned off.'); }).catch(er => fail(er, 'turn off the link'));
-      case 'calendar': S.calMonth = null; S.calDay = null; return openView('calendar', renderCalendar);
-      case 'cal-prev': S.calMonth = addMonthsTo(S.calMonth, -1); S.calDay = null; return renderCalendar();
-      case 'cal-next': S.calMonth = addMonthsTo(S.calMonth, 1); S.calDay = null; return renderCalendar();
+      case 'calendar': S.calMode = null; S.calMonth = null; S.calDay = null; return openView('calendar', renderCalendar);
+      case 'cal-mode':
+        if (el.dataset.mode === S.calMode) return;
+        S.calMode = el.dataset.mode;
+        if (S.calMode === 'month') { S.calMonth = monthStart(S.calDay || now()); if (monthStart(now()) === S.calMonth) S.calDay = L.startOfDay(now()); }
+        else if (S.calDay && weekStartOf(S.calDay) !== weekStartOf(now()) && monthStart(now()) === monthStart(S.calDay)) S.calDay = L.startOfDay(now());
+        return renderCalendar();
+      case 'cal-prev': case 'cal-next': {
+        const dir = act === 'cal-next' ? 1 : -1;
+        if (S.calMode === 'week') { const d = new Date(weekStartOf(S.calDay || now())); d.setDate(d.getDate() + 7 * dir); S.calDay = d.getTime(); }
+        else { S.calMonth = addMonthsTo(S.calMonth, dir); S.calDay = null; }
+        return renderCalendar();
+      }
       case 'cal-today': S.calMonth = null; S.calDay = null; return renderCalendar();
+      case 'add-on': return openTask(null, { day: +el.dataset.day });
       case 'cal-day': {
         const d = +el.dataset.day;
         if (monthStart(d) !== S.calMonth) S.calMonth = monthStart(d);

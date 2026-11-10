@@ -365,3 +365,21 @@ section.lane .list + .cat-head { margin-top: 14px; }
 }
 
 .task.cal-task { grid-template-columns: 6px 1fr; }
+
+/* ---------- Week view (default on phones) ---------- */
+.cal-mode { max-width: 260px; margin: 4px auto 6px; }
+.week { display: grid; gap: 10px; }
+.wk-day { background: var(--surface); border-radius: 18px; padding: 8px 8px 8px 12px; }
+.wk-day.is-today { box-shadow: inset 0 0 0 2.5px var(--ink); }
+.wk-head { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 12px; min-height: 44px; }
+.wk-date { display: grid; justify-items: center; width: 40px; line-height: 1.05; }
+.wk-dow { font-size: 13px; color: var(--ink-2); }
+.wk-num { font-family: var(--display); font-weight: 700; font-size: 22px; }
+.wk-day.is-today .wk-num { color: var(--bg); background: var(--ink); border-radius: 50%; width: 34px; height: 34px; display: grid; place-items: center; font-size: 18px; margin-top: 2px; }
+.wk-extras { display: flex; flex-wrap: wrap; align-items: center; gap: 3px 8px; min-width: 0; font-size: 13.5px; color: var(--ink-2); }
+.wk-extras .heb { font-size: 14px; }
+.wk-learn b { color: var(--ink); }
+.wk-add { width: 44px; height: 44px; border: 0; border-radius: 50%; background: var(--surface-2); color: var(--ink); display: grid; place-items: center; }
+.wk-add svg { width: 20px; height: 20px; }
+.wk-day .list { margin: 6px 0 2px; gap: 6px; }
+.wk-day .task.cal-task { background: var(--bg); min-height: 52px; }
