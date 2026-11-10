@@ -158,6 +158,8 @@
       deleteTask(gid, id) { tasks.delete(id); emit(); return Promise.resolve(); },
       createGroup() { return Promise.resolve('demo'); },
       createFeed(token) { profile = { ...profile, feedToken: token }; onProfile(profile); return Promise.resolve(); },
+      createConnector(token) { profile = { ...profile, claudeToken: token }; onProfile(profile); return Promise.resolve(); },
+      deleteConnector() { profile = { ...profile, claudeToken: null }; onProfile(profile); return Promise.resolve(); },
       deleteFeed() { profile = { ...profile, feedToken: null }; onProfile(profile); return Promise.resolve(); },
       joinGroup() { return Promise.resolve({ groupId: 'demo', name: group.name }); },
       leaveGroup() { return Promise.resolve(); },
@@ -225,6 +227,17 @@
         batch.set(db.doc(`feeds/${token}`), { uid, groupId: gid, createdAt: FV.serverTimestamp() });
         batch.set(db.doc(`users/${uid}`), { feedToken: token }, { merge: true });
         await batch.commit();
+      },
+      // A Claude connector link: connectors/<token> tells the claudeConnector function who is asking.
+      async createConnector(token, gid) {
+        const batch = db.batch();
+        batch.set(db.doc(`connectors/${token}`), { uid, groupId: gid, createdAt: FV.serverTimestamp() });
+        batch.set(db.doc(`users/${uid}`), { claudeToken: token }, { merge: true });
+        await batch.commit();
+      },
+      async deleteConnector(token) {
+        if (token) await db.doc(`connectors/${token}`).delete().catch(() => {});
+        await db.doc(`users/${uid}`).set({ claudeToken: null }, { merge: true });
       },
       async deleteFeed(token) {
         if (token) await db.doc(`feeds/${token}`).delete().catch(() => {});
@@ -1087,6 +1100,9 @@
         <label class="toggle"><span>Show the Daf Yomi</span><input type="checkbox" id="p-daf" ${dafOn() ? 'checked' : ''}></label>` : '<p class="muted small">This browser can’t show Hebrew dates.</p>'}
         <div id="feed-box">${feedHtml()}</div>
       </section>
+      <section class="settings-section" id="claude"><h3>Connect to Claude</h3>
+        <div id="claude-box">${claudeHtml()}</div>
+      </section>
       <section class="settings-section" id="colors"><h3>Colors</h3>
         <p class="muted small">Used in the lanes and the calendar, on everyone’s phone.</p>
         ${[...members(), 'shared'].map(k => `<div class="color-row" data-key="${esc(k)}">
@@ -1184,6 +1200,24 @@
       <p class="muted small">Calendars check for changes on their own schedule: Apple about every hour, Google every few hours. In Google Calendar on a phone, open the link in a browser, since the app can’t add calendars by link.</p>
       <p class="muted small">Anyone with the link can see these tasks. <button class="link" data-act="feed-off">Turn off this link</button></p></div>`;
   }
+  // ---------- Claude connector (one private link per person) ----------
+  function claudeHtml() {
+    const token = S.profile.claudeToken;
+    if (!token) return `<p class="muted small">Add and check tasks by asking Claude, like “remind Leah to call the plumber Tuesday at 10”. Each of you makes your own link on your own phone, so Claude knows who “me” is.</p>
+      <button class="btn quiet" data-act="claude-make">Make my Claude link</button>`;
+    const url = `${location.origin}/mcp/${token}`;
+    return `<label class="field"><span>Your Claude link</span><input type="text" readonly value="${esc(url)}" id="claude-url" onclick="this.select()"></label>
+      <button class="btn block" data-act="claude-copy" data-url="${esc(url)}">Copy link</button>
+      <ol class="steps small">
+        <li>Open <b>claude.ai</b> (on a computer, or in your phone’s browser) and go to <b>Customize → Connectors</b>.</li>
+        <li>Tap <b>+ Add</b>, then <b>Add custom connector</b>. Name it <b>Shared Plate</b> and paste your link.</li>
+        <li>Tap <b>Continue</b>, choose <b>No sign in</b>, then <b>Add</b>.</li>
+        <li>In a chat, turn it on under <b>+ → Connectors</b>, then ask away.</li>
+      </ol>
+      <p class="muted small">The link is yours only: tasks added through it count as added by you. Anyone with it can see and change your household’s tasks, so keep it private. <button class="link" data-act="claude-off">Turn off this link</button></p>`;
+  }
+  const refreshClaude = () => { const box = $('#claude-box'); if (box) box.innerHTML = claudeHtml(); };
+
   const refreshFeed = () => { const box = $('#feed-box'); if (box) box.innerHTML = feedHtml(); };
   function makeFeedToken() {
     const a = new Uint8Array(24); crypto.getRandomValues(a);
@@ -1345,6 +1379,15 @@
         el.disabled = true;
         return B.createFeed(token, S.gid).then(() => { S.profile.feedToken = token; refreshFeed(); }).catch(er => { el.disabled = false; fail(er, 'make the link'); });
       }
+      case 'claude-make': {
+        const token = makeFeedToken();
+        el.disabled = true;
+        return B.createConnector(token, S.gid).then(() => { S.profile.claudeToken = token; refreshClaude(); }).catch(er => { el.disabled = false; fail(er, 'make the link'); });
+      }
+      case 'claude-copy': return navigator.clipboard?.writeText(el.dataset.url).then(() => toast('Claude link copied.'), () => { $('#claude-url')?.select(); toast('Select the link and copy it.'); });
+      case 'claude-off':
+        if (!confirm('Turn off your Claude link? Claude won’t be able to reach Shared Plate until you make a new one.')) return;
+        return B.deleteConnector(S.profile.claudeToken).then(() => { S.profile.claudeToken = null; refreshClaude(); toast('Claude link turned off.'); }).catch(er => fail(er, 'turn off the link'));
       case 'feed-who': S.feedWho = el.dataset.who; return refreshFeed();
       case 'feed-copy': return navigator.clipboard?.writeText(el.dataset.url).then(() => toast('Calendar link copied.'), () => toast(el.dataset.url));
       case 'feed-off':

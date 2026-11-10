@@ -28,7 +28,7 @@ self.addEventListener('fetch', e => {
   if (req.method !== 'GET') return;
   const url = new URL(req.url);
   if (url.origin === location.origin) {
-    if (url.pathname.startsWith('/__/') || url.pathname.startsWith('/cal/')) return; // sign-in helper pages and calendar feeds
+    if (url.pathname.startsWith('/__/') || url.pathname.startsWith('/cal/') || url.pathname.startsWith('/mcp/')) return; // sign-in helper pages and calendar feeds
     // Network first so updates show up right away; the cached copy when offline.
     e.respondWith(fetch(req).then(res => {
       if (res.status === 200) { const copy = res.clone(); caches.open(CACHE).then(c => c.put(req, copy)).catch(() => {}); }

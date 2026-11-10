@@ -115,7 +115,7 @@ service cloud.firestore {
     // Only you can read or change your own record. The other person's name is shown from the group's `names` map.
     match /users/{u} {
       function validUser(d) {
-        return d.keys().hasOnly(['displayName', 'email', 'groupIds', 'tokens', 'prefs', 'quiet', 'tz', 'createdAt', 'updatedAt', 'feedToken'])
+        return d.keys().hasOnly(['displayName', 'email', 'groupIds', 'tokens', 'prefs', 'quiet', 'tz', 'createdAt', 'updatedAt', 'feedToken', 'claudeToken'])
           && optStr(d, 'displayName', 60)
           && (!('groupIds' in d) || (d.groupIds is list && d.groupIds.size() <= 20))
           && (!('tokens' in d) || (d.tokens is map && d.tokens.size() <= 10))
@@ -126,6 +126,18 @@ service cloud.firestore {
       allow read: if allowed() && me() == u;
       allow create, update: if allowed() && me() == u && validUser(request.resource.data);
       allow delete: if signedIn() && me() == u;
+    }
+
+    // ---------- Claude connector links ----------
+    // connectors/{token}: uid, groupId, createdAt. The token is the secret in that person's Claude connector link.
+    match /connectors/{t} {
+      allow read: if allowed() && resource.data.uid == me();
+      allow create: if allowed() && t.size() >= 24
+        && request.resource.data.keys().hasOnly(['uid', 'groupId', 'createdAt'])
+        && request.resource.data.uid == me()
+        && request.resource.data.groupId is string
+        && isMember(request.resource.data.groupId);
+      allow delete: if signedIn() && resource.data.uid == me();
     }
 
     // ---------- Calendar feeds ----------

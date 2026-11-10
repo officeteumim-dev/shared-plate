@@ -35,6 +35,13 @@
           "functionId": "calendarFeed",
           "region": "us-central1"
         }
+      },
+      {
+        "source": "/mcp/**",
+        "function": {
+          "functionId": "claudeConnector",
+          "region": "us-central1"
+        }
       }
     ]
   },

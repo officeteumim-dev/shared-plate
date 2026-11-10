@@ -387,3 +387,16 @@ test('swiping in from the left edge goes back', async () => {
   await swipe();
   await page.waitForFunction(() => !document.querySelector('.sheet'));
 });
+
+test('Settings makes a personal Claude link with setup steps, and can turn it off', async () => {
+  const { page, errors } = await open();
+  page.on('dialog', d => d.accept());
+  await page.click('[data-act=settings]');
+  await page.click('[data-act=claude-make]');
+  assert.match(await page.inputValue('#claude-url'), /^http:\/\/localhost:\d+\/mcp\/[A-Za-z0-9_-]{32}$/);
+  assert.match(await page.textContent('#claude'), /Add custom connector/);
+  assert.match(await page.textContent('#claude'), /No sign in/);
+  await page.click('[data-act=claude-off]');
+  await page.waitForSelector('[data-act=claude-make]');
+  assert.deepEqual(errors, []);
+});
