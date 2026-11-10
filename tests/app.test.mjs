@@ -199,6 +199,7 @@ test('a broken import code gives a clear message', async () => {
 test('calendar shows the month with tasks colored by owner, and lists a tapped day', async () => {
   const { page, errors } = await open();
   await page.click('[data-act=calendar]');
+  await page.click('[data-act=cal-mode][data-mode=month]');
   assert.match(await page.textContent('.cal-nav h2'), /November/);
   // Friday Nov 6: challah (mine), pediatrician (Leah's), recycling (Leah took it).
   const today = page.locator('.day.is-today');
@@ -216,6 +217,7 @@ test('calendar shows the month with tasks colored by owner, and lists a tapped d
 test('calendar moves between months, and Add uses the chosen day', async () => {
   const { page } = await open();
   await page.click('[data-act=calendar]');
+  await page.click('[data-act=cal-mode][data-mode=month]');
   await page.click('[data-act=cal-next]');
   assert.match(await page.textContent('.cal-nav h2'), /December/);
   await page.click('.day:not(.out) >> text="24"');
@@ -295,6 +297,7 @@ test('Hebrew dates and holidays appear when turned on in Settings', async () => 
   await page.click('.sheet [data-act=close]');
   assert.match(await page.textContent('.hello .heb'), /כ״ו חשוון תשפ״ז/);
   await page.click('[data-act=calendar]');
+  await page.click('[data-act=cal-mode][data-mode=month]');
   // Dec 2026: Chanukah starts on the 5th.
   await page.click('[data-act=cal-next]');
   await page.click('.day:not(.out) >> text="5"');
@@ -350,6 +353,7 @@ test('the calendar shows the weekly parsha and Daf Yomi when turned on', async (
   await page.check('#p-parsha'); await page.check('#p-daf');
   await page.click('.sheet [data-act=close]');
   await page.click('[data-act=calendar]');
+  await page.click('[data-act=cal-mode][data-mode=month]');
   await page.click('.day:not(.out) >> text="14"');
   const learning = await page.textContent('.cal-agenda .learning');
   assert.match(learning, /Parshas Toldos/);
@@ -399,4 +403,43 @@ test('Settings makes a personal Claude link with setup steps, and can turn it of
   await page.click('[data-act=claude-off]');
   await page.waitForSelector('[data-act=claude-make]');
   assert.deepEqual(errors, []);
+});
+
+
+test('on a phone the calendar opens to this week, with task titles, and moves week by week', async () => {
+  const { page, errors } = await open();
+  await page.click('[data-act=calendar]');
+  assert.equal(await page.getAttribute('[data-act=cal-mode][data-mode=week]', 'aria-pressed'), 'true');
+  assert.match(await page.textContent('.cal-nav h2'), /Nov 1 – 7/);
+  assert.equal(await page.locator('.wk-day').count(), 7);
+  const today = page.locator('.wk-day.is-today');
+  assert.match(await today.textContent(), /Pick up challah/);
+  assert.match(await today.textContent(), /Pediatrician appointment for Noa/);
+  await page.click('[data-act=cal-next]');
+  assert.match(await page.textContent('.cal-nav h2'), /Nov 8 – 14/);
+  assert.match(await page.textContent('.wk-day:nth-child(6)'), /Pick up challah/, 'next week’s copy of a weekly task');
+  await page.click('.wk-day:nth-child(3) [data-act=add-on]');
+  assert.equal(await page.inputValue('#task-form [name=date]'), '2026-11-10');
+  assert.deepEqual(errors, []);
+});
+
+test('the week view shows Hebrew dates, holidays, parsha and daf when they are on', async () => {
+  const { page } = await open();
+  await page.click('[data-act=settings]');
+  await page.check('#p-hebrew'); await page.check('#p-parsha'); await page.check('#p-daf');
+  await page.click('.sheet [data-act=close]');
+  await page.click('[data-act=calendar]');
+  await page.click('[data-act=cal-next]');
+  const shabbos = await page.textContent('.wk-day:nth-child(7)');
+  assert.match(shabbos, /Toldos/);
+  assert.match(shabbos, /Bechoros 57/);
+  assert.match(await page.textContent('.wk-day:nth-child(3)'), /Rosh Chodesh Kislev/);
+});
+
+test('a wide screen opens the calendar to the month', async () => {
+  const { page } = await open();
+  await page.setViewportSize({ width: 1100, height: 900 });
+  await page.click('[data-act=calendar]');
+  assert.equal(await page.getAttribute('[data-act=cal-mode][data-mode=month]', 'aria-pressed'), 'true');
+  assert.equal(await page.locator('.day').count() >= 28, true);
 });
