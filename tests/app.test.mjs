@@ -17,7 +17,7 @@ after(async () => { await browser?.close(); server?.close(); });
 async function open(opts = {}) {
   const page = await browser.newPage({ viewport: { width: 390, height: 844 }, hasTouch: true, colorScheme: opts.dark ? 'dark' : 'light', timezoneId: 'America/New_York' });
   // A fixed Friday morning, so "today", "overdue" and the sample tasks look the same whenever the tests run.
-  await page.clock.setFixedTime(new Date('2026-11-06T09:00:00-05:00'));
+  await page.clock.setFixedTime(new Date(opts.at || '2026-11-06T09:00:00-05:00'));
   const errors = [];
   page.on('pageerror', e => errors.push(e.message));
   // Fonts and Firebase come from CDNs; the preview doesn't need them, and blocking keeps the tests offline-safe.
@@ -28,7 +28,7 @@ async function open(opts = {}) {
 }
 // Task titles without the small priority badge in front.
 const titleText = e => { const c = e.cloneNode(true); c.querySelectorAll('.prio').forEach(p => p.remove()); return c.textContent.trim(); };
-const laneTitles = (page, lane) => page.$$eval(`section.lane.${lane} .title`, (els, f) => els.map(new Function('return ' + f)()), titleText.toString());
+const laneTitles = (page, lane) => page.$$eval(`section.lane.${lane} > ul .title`, (els, f) => els.map(new Function('return ' + f)()), titleText.toString());
 
 test('dashboard shows the three lanes with the other person’s name', async () => {
   const { page, errors } = await open();
@@ -57,7 +57,7 @@ test('an old unclaimed shared task gets a gentle nudge', async () => {
 test('“Take it” moves a shared task to my lane', async () => {
   const { page } = await open();
   await page.click('section.lane.shared .row-wrap:has-text("Order birthday gift") [data-act=take]');
-  await page.waitForFunction(() => [...document.querySelectorAll('section.lane.mine .title')].some(e => e.textContent.includes('Order birthday gift')));
+  await page.waitForFunction(() => [...document.querySelectorAll('section.lane.mine > ul .title')].some(e => e.textContent.includes('Order birthday gift')));
   assert.match(await page.textContent('section.lane.mine'), /Shared, you took it/);
   assert.ok(!(await laneTitles(page, 'shared')).includes('Order birthday gift for Grandma'));
 });
@@ -68,7 +68,7 @@ test('quick add puts a task in the chosen lane', async () => {
   await page.fill('#task-form [name=title]', 'Buy light bulbs');
   await page.click('#owner-seg [data-owner=shared]');
   await page.click('#task-form [type=submit]');
-  await page.waitForFunction(() => [...document.querySelectorAll('section.lane.shared .title')].some(e => e.textContent === 'Buy light bulbs'));
+  await page.waitForFunction(() => [...document.querySelectorAll('section.lane.shared > ul .title')].some(e => e.textContent === 'Buy light bulbs'));
   assert.deepEqual(errors, []);
 });
 
@@ -85,12 +85,12 @@ test('a repeating task needs a due date', async () => {
 test('marking done moves it to Completed, and Undo brings it back', async () => {
   const { page } = await open();
   await page.click('section.lane.mine .row-wrap:has-text("Renew car registration") [data-act=done]');
-  await page.waitForFunction(() => ![...document.querySelectorAll('section.lane.mine .title')].some(e => e.textContent.includes('Renew car')));
+  await page.waitForFunction(() => ![...document.querySelectorAll('section.lane.mine > ul .title')].some(e => e.textContent.includes('Renew car')));
   await page.click('[data-act=show-done]');
   assert.match(await page.textContent('main'), /Renew car registration/);
   await page.click('.done-list .row-wrap:has-text("Renew car registration") [data-act=undo]');
   await page.click('[data-act=home]');
-  await page.waitForFunction(() => [...document.querySelectorAll('section.lane.mine .title')].some(e => e.textContent.includes('Renew car')));
+  await page.waitForFunction(() => [...document.querySelectorAll('section.lane.mine > ul .title')].some(e => e.textContent.includes('Renew car')));
 });
 
 test('finishing a repeating task schedules the next one', async () => {
@@ -117,7 +117,7 @@ test('swiping a task to the right marks it done', async () => {
   await page.mouse.down();
   for (let i = 1; i <= 10; i++) await page.mouse.move(box.x + 60 + i * 26, y);
   await page.mouse.up();
-  await page.waitForFunction(() => ![...document.querySelectorAll('section.lane.mine .title')].some(e => e.textContent.includes('Renew car')));
+  await page.waitForFunction(() => ![...document.querySelectorAll('section.lane.mine > ul .title')].some(e => e.textContent.includes('Renew car')));
 });
 
 test('snoozing hides a task until its date', async () => {
@@ -125,8 +125,8 @@ test('snoozing hides a task until its date', async () => {
   await page.click('section.lane.mine .row-wrap:has-text("Renew car registration") [data-act=edit]');
   await page.click('[data-act=snooze-menu]');
   await page.click('[data-snooze]:has-text("Tomorrow")');
-  await page.waitForFunction(() => ![...document.querySelectorAll('section.lane.mine .title')].some(e => e.textContent.includes('Renew car')));
-  assert.match(await page.textContent('details.more summary'), /Snoozed \(2\)/);
+  await page.waitForFunction(() => ![...document.querySelectorAll('section.lane.mine > ul .title')].some(e => e.textContent.includes('Renew car')));
+  assert.match(await page.textContent('section.lane.mine details.drawer[data-drawer="mine-snoozed"] summary'), /Snoozed\s*1/);
 });
 
 test('settings show quiet hours and the invite code', async () => {
@@ -178,11 +178,11 @@ test('importing a list adds open, snoozed and done tasks, and skips ones already
   assert.match(await page.textContent('.sheet h2'), /Add 4 tasks/);
   assert.match(await page.textContent('.sheet'), /1 already on the plate will be skipped/);
   await page.click('[data-act=import-go]');
-  await page.waitForFunction(() => [...document.querySelectorAll('section.lane.mine .title')].some(e => e.textContent === 'Call Rieber swap dumpster'));
+  await page.waitForFunction(() => [...document.querySelectorAll('section.lane.mine > ul .title')].some(e => e.textContent === 'Call Rieber swap dumpster'));
   const mine = await laneTitles(page, 'mine');
   assert.ok(mine.includes('Follow up on the salmon'), 'a snooze date in the past comes in as open');
   assert.ok(!mine.includes('Schedule RJJ'), 'a future snooze stays hidden');
-  assert.match(await page.textContent('details.more summary'), /Snoozed \(2\)/);
+  assert.match(await page.textContent('section.lane.mine details.drawer[data-drawer="mine-snoozed"] summary'), /Snoozed\s*1/);
   await page.click('[data-act=show-done]');
   assert.match(await page.textContent('main'), /Shabbos plans/);
   assert.deepEqual(errors, []);
@@ -202,7 +202,7 @@ test('calendar shows the month with tasks colored by owner, and lists a tapped d
   assert.match(await page.textContent('.cal-nav h2'), /November/);
   // Friday Nov 6: challah (mine), pediatrician (Leah's), recycling (Leah took it).
   const today = page.locator('.day.is-today');
-  assert.equal(await today.locator('.mark').count(), 3);
+  assert.equal(await today.locator('.mark').count(), 4, 'five tasks today: four marks and a +');
   assert.match(await page.textContent('.cal-agenda'), /Pick up challah/);
   assert.match(await page.textContent('.cal-agenda'), /Pediatrician appointment/);
   // Weekly challah repeats on Nov 13 (shown as a ring).
@@ -316,4 +316,74 @@ test('Settings makes a calendar link for Apple and Google Calendar, and can turn
   await page.click('[data-act=feed-off]');
   await page.waitForSelector('[data-act=feed-make]');
   assert.deepEqual(errors, []);
+});
+
+
+test('daily tasks are shown smaller, in the main list', async () => {
+  const { page } = await open();
+  assert.ok((await laneTitles(page, 'shared')).includes('Do the dishes'));
+  assert.equal(await page.locator('section.lane.shared > ul .row-wrap.compact:has-text("Do the dishes")').count(), 1);
+});
+
+test('a shared repeating task someone took comes back tomorrow on the Shared plate, unclaimed', async () => {
+  const { page } = await open({ at: '2026-11-06T19:30:00-05:00' });
+  await page.click('section.lane.shared .row-wrap:has-text("Do the dishes") [data-act=take]');
+  await page.waitForFunction(() => [...document.querySelectorAll('section.lane.mine > ul .title')].some(e => e.textContent.includes('Do the dishes')));
+  await page.click('section.lane.mine .row-wrap:has-text("Do the dishes") [data-act=done]');
+  await page.waitForFunction(() => /Next one/.test(document.querySelector('#toast')?.textContent || ''));
+  await page.waitForFunction(() => [...document.querySelectorAll('section.lane.shared > ul .title')].some(e => e.textContent.includes('Do the dishes')));
+  assert.ok(!(await laneTitles(page, 'mine')).includes('Do the dishes'));
+});
+
+test('snoozed tasks sit in a drawer at the bottom of their person’s tile', async () => {
+  const { page } = await open();
+  const d = page.locator('section.lane.theirs details[data-drawer="theirs-snoozed"]');
+  assert.match(await d.locator('summary').textContent(), /Snoozed\s*1/);
+  await d.locator('summary').click();
+  assert.match(await d.textContent(), /Book the summer camp/);
+  assert.equal(await page.locator('main > section details.more').count(), 0, 'no separate snoozed list any more');
+});
+
+test('the calendar shows the weekly parsha and Daf Yomi when turned on', async () => {
+  const { page, errors } = await open();
+  await page.click('[data-act=settings]');
+  await page.check('#p-parsha'); await page.check('#p-daf');
+  await page.click('.sheet [data-act=close]');
+  await page.click('[data-act=calendar]');
+  await page.click('.day:not(.out) >> text="14"');
+  const learning = await page.textContent('.cal-agenda .learning');
+  assert.match(learning, /Parshas Toldos/);
+  assert.match(learning, /Daf Yomi: Bechoros 57/);
+  assert.deepEqual(errors, []);
+});
+
+test('the back button and the browser back gesture leave the calendar and close sheets', async () => {
+  const { page } = await open();
+  await page.click('[data-act=calendar]');
+  await page.goBack();
+  await page.waitForSelector('section.lane.mine');
+  await page.click('[data-act=settings]');
+  await page.goBack();
+  await page.waitForFunction(() => !document.querySelector('.sheet'));
+  await page.click('[data-act=show-done]');
+  await page.click('[data-act=home]');
+  await page.waitForSelector('section.lane.mine');
+});
+
+test('swiping in from the left edge goes back', async () => {
+  const { page } = await open();
+  await page.click('[data-act=calendar]');
+  const swipe = async () => page.evaluate(async () => {
+    const fire = (type, x) => {
+      const t = new Touch({ identifier: 1, target: document.body, clientX: x, clientY: 400 });
+      document.body.dispatchEvent(new TouchEvent(type, { touches: type === 'touchend' ? [] : [t], changedTouches: [t], bubbles: true }));
+    };
+    fire('touchstart', 5); for (let x = 20; x <= 260; x += 40) fire('touchmove', x); fire('touchend', 260);
+    await new Promise(r => setTimeout(r, 300));
+  });
+  await swipe();
+  await page.waitForSelector('section.lane.mine');
+  await page.click('[data-act=settings]');
+  await swipe();
+  await page.waitForFunction(() => !document.querySelector('.sheet'));
 });

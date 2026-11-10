@@ -74,8 +74,12 @@
     return `<span class="prio p${level}" title="Priority ${esc(p)}">${esc(p)}</span>`;
   }
   const DEFAULT_CATS = ['Work', 'Car', 'House'];
+  // Tasks that repeat every day are shown smaller. (Hiding them until an hour before they're due is on hold.)
+  const isDaily = x => { const r = L.normRepeat(x.repeat); return !!r && r.unit === 'day' && r.every === 1; };
   // Hebrew dates and holidays: a per-person display option (Settings → Calendar).
   const hebOn = () => !!(Hb && Hb.supported && S.profile.prefs && S.profile.prefs.hebrew === true);
+  const parshaOn = () => !!(Hb && Hb.supported && S.profile.prefs && S.profile.prefs.parsha === true);
+  const dafOn = () => !!(Hb && Hb.supported && S.profile.prefs && S.profile.prefs.daf === true);
   const holidayHtml = ms => Hb.holidays(ms).map(h => `<span class="hol ${h.kind}">${esc(h.name)}</span>`).join('');
   const allCats = () => { const c = L.categories([...S.open, ...S.done]); for (const d of DEFAULT_CATS) if (!c.some(x => x.toLowerCase() === d.toLowerCase())) c.push(d); return c; };
   const savedFilter = () => { try { return localStorage.getItem('sp_cat') || ''; } catch (e) { return ''; } };
@@ -118,6 +122,8 @@
       ['p5', { ...base, title: 'Take out recycling', owner: 'shared', claimedBy: her, claimedAt: t0 - H, dueAt: at(0, 20), repeat: 'weekly' }],
       ['p6', { ...base, title: 'Order birthday gift for Grandma', owner: 'shared', dueAt: at(2, 12) }],
       ['p7', { ...base, title: 'Renew car registration', owner: me, dueAt: at(5, 9), category: 'Car', priority: '2' }],
+      ['p12', { ...base, title: 'Do the dishes', owner: 'shared', dueAt: at(0, 20), repeat: 'daily', createdAt: t0 - H }],
+      ['p13', { ...base, title: 'Take vitamins', owner: me, dueAt: at(0, 9, 30), repeat: 'daily' }],
       ['p10', { ...base, title: 'Send the Q4 invoices', owner: me, category: 'Work', priority: '3' }],
       ['p11', { ...base, title: 'Rotate the tires', owner: me, category: 'Car' }],
       ['p8', { ...base, title: 'Book the summer camp', owner: her, status: 'snoozed', showAgainOn: at(3, 8), createdBy: her }],
@@ -466,6 +472,7 @@
     const others1 = others().length === 1 ? (S.group.names?.[others()[0]] || 'Them') : 'Theirs';
     const date = new Date(t).toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' });
     const todayN = l.today.length;
+    const snoozedIn = k => l.snoozed.filter(x => L.laneOf(x, S.uid) === k);
     app.innerHTML = `
       <header class="top">
         <h1>${esc(S.group.name || 'Shared Plate')}</h1>
@@ -491,15 +498,17 @@
       ${todayN ? `<nav class="today" aria-label="Due today">${l.today.map(x => chip(x, t)).join('')}</nav>` : ''}
       ${cats.length ? `<nav class="cats" aria-label="Categories">${['', ...cats].map(c => `<button class="cat-chip" data-act="cat" data-cat="${esc(c)}" aria-pressed="${(S.cat || '').toLowerCase() === c.toLowerCase()}">${esc(c || 'All')}</button>`).join('')}</nav>` : ''}
       <div class="lanes">
-        ${lane('mine', 'Mine', l.mine, t, 'Nothing on your plate. Nice.')}
-        ${lane('theirs', theirsTitle(), l.theirs, t, others().length ? 'Nothing on their plate right now.' : 'Invite someone from Settings to share the plate.')}
-        ${lane('shared', 'Shared', l.shared, t, 'No shared tasks waiting. Add one for whoever gets to it first.')}
+        ${lane('mine', 'Mine', l.mine, t, 'Nothing on your plate. Nice.', snoozedIn('mine'))}
+        ${lane('theirs', theirsTitle(), l.theirs, t, others().length ? 'Nothing on their plate right now.' : 'Invite someone from Settings to share the plate.', snoozedIn('theirs'))}
+        ${lane('shared', 'Shared', l.shared, t, 'No shared tasks waiting. Add one for whoever gets to it first.', snoozedIn('shared'))}
       </div>
-      ${l.snoozed.length ? `<section style="margin-top:28px"><details class="more"><summary>Snoozed (${l.snoozed.length})</summary>
-        <ul class="list">${l.snoozed.map(x => row(x, t, L.laneOf(x, S.uid), true)).join('')}</ul></details></section>` : ''}
       <div class="more-row"><button class="btn line" data-act="show-done">Completed</button></div>
       <button class="fab" data-act="add" aria-label="Add a task">${ICON.plus}<span>Add</span></button>`;
     bindSwipes(); bindReorder();
+    app.querySelectorAll('details.drawer').forEach(d => d.addEventListener('toggle', () => {
+      const set = S.openDrawers || (S.openDrawers = new Set());
+      if (d.open) set.add(d.dataset.drawer); else set.delete(d.dataset.drawer);
+    }));
   }
 
   function plate(counts, todayN) {
@@ -527,15 +536,20 @@
       <span class="t">${prio(x)}${esc(x.title)}</span></button>`;
   }
 
-  function lane(k, title, list, t, empty) {
+  function lane(k, title, list, t, empty, snoozed) {
+    const open = S.openDrawers || (S.openDrawers = new Set());
+    const drawer = (id, label, items, snz) => items.length ? `<details class="drawer" data-drawer="${k}-${id}" ${open.has(`${k}-${id}`) ? 'open' : ''}>
+        <summary>${label} <span class="n">${items.length}</span></summary>
+        <ul class="list">${items.map(x => row(x, t, k, snz)).join('')}</ul></details>` : '';
     return `<section class="lane ${k}" aria-label="${esc(title)}">
       <div class="lane-head"><h3>${esc(title)}</h3><span class="count">${list.length}</span></div>
-      ${!list.length ? `<div class="empty">${esc(S.cat ? `Nothing in ${S.cat} here.` : empty)}</div>`
+      ${!list.length ? `<div class="empty">${esc(S.cat ? `Nothing in ${S.cat} here.` : snoozed.length ? 'Nothing due right now.' : empty)}</div>`
         : (() => {
           const groups = L.byCategory(list);
           const named = groups.some(g => g.name) && !S.cat;
           return groups.map(g => `${named ? `<h4 class="cat-head">${esc(g.name || 'Other')}</h4>` : ''}<ul class="list" data-sortable="${esc(k + '/' + g.name)}">${g.items.map(x => row(x, t, k, false, true)).join('')}</ul>`).join('');
         })()}
+      ${drawer('snoozed', 'Snoozed', snoozed, true)}
     </section>`;
   }
 
@@ -550,7 +564,7 @@
     if (x.category && (snoozed || S.view === 'calendar')) meta.push(`<span class="tag">${esc(x.category)}</span>`);
     const unclaimed = x.owner === 'shared' && !x.claimedBy && !snoozed;
     const nudge = unclaimed && L.needsNudge(x, t, C.nudgeAfterHours || 24);
-    return `<li class="row-wrap lane ${k}" data-id="${esc(x.id)}"><div class="swipe-hint" aria-hidden="true">Done</div>
+    return `<li class="row-wrap lane ${k}${isDaily(x) ? ' compact' : ''}" data-id="${esc(x.id)}"><div class="swipe-hint" aria-hidden="true">Done</div>
       <div class="task" data-id="${esc(x.id)}">
         <button class="check" data-act="done" data-id="${esc(x.id)}" aria-label="Mark done: ${esc(x.title)}"><span></span></button>
         <button class="body" data-act="edit" data-id="${esc(x.id)}">
@@ -587,12 +601,13 @@
       const due = L.toMs(x.dueAt);
       if (due == null) continue;
       push(x, due, { snoozed: L.effectiveStatus(x, now()) === 'snoozed' });
-      if (L.normRepeat(x.repeat)) {
+      // Upcoming copies of repeating tasks show as rings (not for daily ones, which would fill every day).
+      if (L.normRepeat(x.repeat) && !isDaily(x)) {
         let next = due;
         for (let i = 0; i < 62; i++) {
           next = L.nextDue(next, x.repeat, next);
           if (!next || next >= to) break;
-          push(x, next, { repeat: true });
+          push(x, next, { repeat: true, who: x.owner === 'shared' ? 'shared' : x.owner });
         }
       }
     }
@@ -612,7 +627,7 @@
     const items = calendarItems(gridStart.getTime(), gridEnd.getTime());
     const byDay = {};
     for (const it of items) (byDay[dayKey(it.at)] = byDay[dayKey(it.at)] || []).push(it);
-    const todayKey = dayKey(t), selKey = dayKey(S.calDay), heb = hebOn();
+    const todayKey = dayKey(t), selKey = dayKey(S.calDay), heb = hebOn(), showParsha = parshaOn(), showDaf = dafOn();
     let cells = '';
     for (let i = 0; i < weeks * 7; i++) {
       const d = new Date(gridStart); d.setDate(gridStart.getDate() + i);
@@ -621,7 +636,7 @@
       const peek = list.slice(0, 2).map(it => `<span class="peek${it.done ? ' done' : ''}" style="--c:${personColor(it.who)}">${esc(it.x.title)}</span>`).join('');
       const label = `${d.toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' })}, ${list.length ? list.length + (list.length === 1 ? ' task' : ' tasks') : 'nothing scheduled'}`;
       cells += `<button class="day${inMonth ? '' : ' out'}${k === todayKey ? ' is-today' : ''}${k === selKey ? ' sel' : ''}" data-act="cal-day" data-day="${d.getTime()}" aria-label="${esc(label)}" aria-pressed="${k === selKey}">
-        <span class="num">${d.getDate()}</span>${heb ? `<span class="hd" lang="he">${esc(Hb.dayLetters(d.getTime()))}</span>${(() => { const hs = Hb.holidays(d.getTime()).filter(h => h.kind !== 'erev'); return hs.length ? `<span class="hol-dot ${hs[0].kind}" title="${esc(hs.map(h => h.name).join(', '))}"></span><span class="hol-name ${hs[0].kind}">${esc(hs[0].name)}</span>` : ''; })()}` : ''}<span class="marks">${marks}${list.length > 4 ? '<b>+</b>' : ''}</span><span class="peeks">${peek}${list.length > 2 ? `<span class="more-n">+${list.length - 2}</span>` : ''}</span></button>`;
+        <span class="num">${d.getDate()}</span>${heb ? `<span class="hd" lang="he">${esc(Hb.dayLetters(d.getTime()))}</span>${(() => { const hs = Hb.holidays(d.getTime()).filter(h => h.kind !== 'erev'); return hs.length ? `<span class="hol-dot ${hs[0].kind}" title="${esc(hs.map(h => h.name).join(', '))}"></span><span class="hol-name ${hs[0].kind}">${esc(hs[0].name)}</span>` : ''; })()}` : ''}${showParsha && d.getDay() === 6 && Hb.parsha(d.getTime()) ? `<span class="pname">${esc(Hb.parsha(d.getTime()))}</span>` : ''}<span class="marks">${marks}${list.length > 4 ? '<b>+</b>' : ''}</span><span class="peeks">${peek}${list.length > 2 ? `<span class="more-n">+${list.length - 2}</span>` : ''}</span></button>`;
     }
     const sel = byDay[selKey] || [];
     const whoName = k => k === 'shared' ? 'Shared' : k === S.uid ? 'You' : nameOf(k);
@@ -644,6 +659,7 @@
       <section class="cal-agenda">
         <h3>${esc(selName)}</h3>
         ${heb ? `<p class="heb-line"><span class="heb" lang="he" dir="rtl">${esc(Hb.format(S.calDay, true))}</span>${holidayHtml(S.calDay)}</p>` : ''}
+        ${showParsha || showDaf ? `<p class="learning">${showParsha && Hb.parsha(S.calDay) ? `<span><b>Parshas ${esc(Hb.parsha(S.calDay))}</b>${new Date(S.calDay).getDay() === 6 ? '' : ' this Shabbos'}</span>` : ''}${showDaf ? `<span>Daf Yomi: <b>${esc(Hb.dafYomi(S.calDay).masechta)} ${Hb.dafYomi(S.calDay).daf}</b></span>` : ''}</p>` : ''}
         ${sel.length ? `<ul class="list">${sel.map(it => `<li class="row-wrap"><div class="task cal-task" style="--k:${personColor(it.who)}">
           <span class="bar"></span>
           <button class="body" data-act="edit" data-id="${esc(it.x.id)}">
@@ -791,13 +807,103 @@
   // =====================================================================
   // Sheets: add / edit task, settings
   // =====================================================================
+  // ---------- Going back ----------
+  // Screens and sheets add a browser history entry, so Android's back button, the back arrow, swiping in from the
+  // left edge and pulling a sheet down all go back one step.
+  const navStack = [];
+  let skipPop = 0;
+  function pushNav(kind) { navStack.push(kind); try { history.pushState({ sp: navStack.length }, ''); } catch (e) {} }
+  function popNav(kind) {
+    // Called when we leave a screen or sheet ourselves: drop its history entry quietly.
+    const i = navStack.lastIndexOf(kind);
+    if (i < 0) return;
+    navStack.splice(i, 1); skipPop++;
+    try { history.back(); } catch (e) { skipPop--; }
+  }
+  addEventListener('popstate', () => {
+    if (skipPop) { skipPop--; return; }
+    const kind = navStack.pop();
+    if (kind === 'sheet') closeSheet(true);
+    else if (kind === 'view') goHome(true);
+  });
+  function goHome(fromHistory) {
+    if (!fromHistory) popNav('view');
+    closeSheet(fromHistory);
+    if (S.group && S.view !== 'setup') { S.view = 'home'; render(); window.scrollTo(0, 0); } else pickGroup();
+  }
+  function openView(view, draw) {
+    if (S.view === 'home' || S.view === 'setup') pushNav('view');
+    S.view = view; window.scrollTo(0, 0); draw();
+  }
+  // The back gesture: whatever is on top goes away.
+  function goBack() {
+    if (sheetRoot.innerHTML) return closeSheet();
+    if (S.view === 'calendar' || S.view === 'done') return goHome();
+  }
+
   function openSheet(html, onOpen) {
-    sheetRoot.innerHTML = `<div class="scrim" data-act="close"></div><div class="sheet" role="dialog" aria-modal="true"><div class="grab"></div>${html}</div>`;
+    const wasOpen = !!sheetRoot.innerHTML;
+    sheetRoot.innerHTML = `<div class="scrim" data-act="close"></div><div class="sheet" role="dialog" aria-modal="true"><div class="grab" aria-hidden="true"></div>${html}</div>`;
     document.body.style.overflow = 'hidden';
+    if (!wasOpen) pushNav('sheet');
+    bindSheetPull(sheetRoot.querySelector('.sheet'));
     onOpen && onOpen(sheetRoot.querySelector('.sheet'));
   }
-  function closeSheet() { sheetRoot.innerHTML = ''; document.body.style.overflow = ''; }
+  function closeSheet(fromHistory) {
+    if (!sheetRoot.innerHTML) return;
+    sheetRoot.innerHTML = ''; document.body.style.overflow = '';
+    if (!fromHistory) popNav('sheet');
+  }
   addEventListener('keydown', e => { if (e.key === 'Escape' && sheetRoot.innerHTML) closeSheet(); });
+
+  // Pull a sheet down (from its top, when it isn't scrolled) to close it.
+  function bindSheetPull(sheet) {
+    let y0 = null, dy = 0;
+    sheet.addEventListener('touchstart', e => {
+      if (sheet.scrollTop > 0 || e.target.closest('input, textarea, select, .grip')) { y0 = null; return; }
+      y0 = e.touches[0].clientY; dy = 0;
+    }, { passive: true });
+    sheet.addEventListener('touchmove', e => {
+      if (y0 == null) return;
+      dy = e.touches[0].clientY - y0;
+      if (dy > 0 && sheet.scrollTop <= 0) { sheet.style.transition = 'none'; sheet.style.transform = `translateY(${dy}px)`; }
+    }, { passive: true });
+    sheet.addEventListener('touchend', () => {
+      if (y0 == null) return;
+      sheet.style.transition = ''; y0 = null;
+      if (dy > 110) { sheet.style.transform = 'translateY(100%)'; setTimeout(() => closeSheet(), 150); } else sheet.style.transform = '';
+    });
+  }
+
+  // Swipe in from the left edge of the screen to go back (like iPhone apps). Works on screens and sheets.
+  (function edgeSwipe() {
+    const EDGE = 28;
+    let x0 = null, y0 = 0, dx = 0, target = null, horizontal = false;
+    addEventListener('touchstart', e => {
+      const t = e.touches[0];
+      const canGoBack = sheetRoot.innerHTML || S.view === 'calendar' || S.view === 'done';
+      if (!canGoBack || t.clientX > EDGE) { x0 = null; return; }
+      x0 = t.clientX; y0 = t.clientY; dx = 0; horizontal = false;
+      target = sheetRoot.querySelector('.sheet') || app;
+    }, { passive: true });
+    addEventListener('touchmove', e => {
+      if (x0 == null) return;
+      const t = e.touches[0];
+      dx = t.clientX - x0;
+      if (!horizontal && Math.abs(t.clientY - y0) > Math.abs(dx)) { x0 = null; target.style.transform = ''; return; }
+      horizontal = true;
+      if (dx > 0) { target.style.transition = 'none'; target.style.transform = `translateX(${dx}px)`; target.style.opacity = String(Math.max(0.4, 1 - dx / innerWidth)); }
+    }, { passive: true });
+    addEventListener('touchend', () => {
+      if (x0 == null) return;
+      const el = target; x0 = null;
+      el.style.transition = 'transform .16s ease, opacity .16s ease';
+      if (dx > Math.min(110, innerWidth * 0.28)) {
+        el.style.transform = `translateX(${innerWidth}px)`; el.style.opacity = '0';
+        setTimeout(() => { el.style.transition = 'none'; el.style.transform = ''; el.style.opacity = ''; goBack(); requestAnimationFrame(() => { el.style.transition = ''; }); }, 160);
+      } else { el.style.transform = ''; el.style.opacity = ''; }
+    });
+  })();
 
   const pad = n => String(n).padStart(2, '0');
   const dateStr = ms => { const d = new Date(ms); return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`; };
@@ -976,7 +1082,9 @@
       </section>
       <section class="settings-section" id="calendar-settings"><h3>Calendar</h3>
         ${Hb && Hb.supported ? `<label class="toggle"><span>Show Hebrew dates and holidays</span><input type="checkbox" id="p-hebrew" ${hebOn() ? 'checked' : ''}></label>
-        <p class="muted small">Yamim Tovim, fasts, Chanukah, Purim and Rosh Chodesh, as kept outside Israel.</p>` : '<p class="muted small">This browser can’t show Hebrew dates.</p>'}
+        <p class="muted small">Yamim Tovim, fasts, Chanukah, Purim and Rosh Chodesh, as kept outside Israel.</p>
+        <label class="toggle"><span>Show the weekly parsha</span><input type="checkbox" id="p-parsha" ${parshaOn() ? 'checked' : ''}></label>
+        <label class="toggle"><span>Show the Daf Yomi</span><input type="checkbox" id="p-daf" ${dafOn() ? 'checked' : ''}></label>` : '<p class="muted small">This browser can’t show Hebrew dates.</p>'}
         <div id="feed-box">${feedHtml()}</div>
       </section>
       <section class="settings-section" id="colors"><h3>Colors</h3>
@@ -1014,11 +1122,11 @@
         prefs: { due: sheet.querySelector('#p-due').checked, back: sheet.querySelector('#p-back').checked }
       }).catch(e => fail(e, 'save quiet hours'));
       ['#q-on', '#q-start', '#q-end', '#p-due', '#p-back'].forEach(s => sheet.querySelector(s).addEventListener('change', saveQuiet));
-      sheet.querySelector('#p-hebrew')?.addEventListener('change', e => {
-        S.profile.prefs = { ...(S.profile.prefs || {}), hebrew: e.target.checked };
-        B.saveProfile({ prefs: { hebrew: e.target.checked } }).catch(er => fail(er, 'save that setting'));
+      [['#p-hebrew', 'hebrew'], ['#p-parsha', 'parsha'], ['#p-daf', 'daf']].forEach(([sel, key]) => sheet.querySelector(sel)?.addEventListener('change', e => {
+        S.profile.prefs = { ...(S.profile.prefs || {}), [key]: e.target.checked };
+        B.saveProfile({ prefs: { [key]: e.target.checked } }).catch(er => fail(er, 'save that setting'));
         render();
-      });
+      }));
       sheet.querySelector('#my-name').addEventListener('change', e => {
         const v = e.target.value.trim().slice(0, 60); if (!v) return;
         B.updateGroup(S.gid, { [`names.${S.uid}`]: v }).catch(er => fail(er, 'save your name'));
@@ -1230,7 +1338,7 @@
       case 'undo': return undoDone(id);
       case 'settings': return openSettings();
       case 'close': return closeSheet();
-      case 'show-done': S.view = 'done'; window.scrollTo(0, 0); return renderDone();
+      case 'show-done': return openView('done', renderDone);
       case 'cat': S.cat = el.dataset.cat; try { localStorage.setItem('sp_cat', S.cat); } catch (er) {} return render();
       case 'feed-make': {
         const token = makeFeedToken();
@@ -1242,7 +1350,7 @@
       case 'feed-off':
         if (!confirm('Turn off this calendar link? Calendars subscribed to it will stop updating.')) return;
         return B.deleteFeed(S.profile.feedToken).then(() => { S.profile.feedToken = null; refreshFeed(); toast('Calendar link turned off.'); }).catch(er => fail(er, 'turn off the link'));
-      case 'calendar': S.view = 'calendar'; S.calMonth = null; S.calDay = null; window.scrollTo(0, 0); return renderCalendar();
+      case 'calendar': S.calMonth = null; S.calDay = null; return openView('calendar', renderCalendar);
       case 'cal-prev': S.calMonth = addMonthsTo(S.calMonth, -1); S.calDay = null; return renderCalendar();
       case 'cal-next': S.calMonth = addMonthsTo(S.calMonth, 1); S.calDay = null; return renderCalendar();
       case 'cal-today': S.calMonth = null; S.calDay = null; return renderCalendar();
@@ -1254,7 +1362,7 @@
       }
       case 'add-on-day': return openTask(null, { day: S.calDay });
       case 'colors-reset': return B.updateGroup(S.gid, { colors: {} }).then(() => { closeSheet(); openSettings('colors'); }).catch(er => fail(er, 'reset the colors'));
-      case 'home': closeSheet(); if (S.group && S.view !== 'setup') { S.view = 'home'; return render(); } return pickGroup();
+      case 'home': return goHome();
       case 'push-on': return enablePush();
       case 'push-off': return disablePush();
       case 'share-invite': {
