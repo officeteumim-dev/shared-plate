@@ -198,6 +198,16 @@ test('calendar feeds: you can make one for your own household only, and only you
   await assertSucceeds(setDoc(doc(db.B(), 'users', B), { displayName: 'Leah', feedToken: tok }));
 });
 
+test('Claude links: each person makes their own, for their own household, and only they can see or delete it', async () => {
+  const tok = 'zyxwvutsrqponmlkjihgfedcba543210';
+  await assertSucceeds(setDoc(doc(db.B(), 'connectors', tok), { uid: B, groupId: G, createdAt: serverTimestamp() }));
+  await assertFails(getDoc(doc(db.A(), 'connectors', tok)));
+  await assertFails(setDoc(doc(db.A(), 'connectors', tok + 'a'), { uid: B, groupId: G, createdAt: serverTimestamp() }));
+  await assertFails(setDoc(doc(db.C(), 'connectors', tok + 'b'), { uid: C, groupId: G, createdAt: serverTimestamp() }));
+  await assertSucceeds(updateDoc(doc(db.A(), 'users', A), { claudeToken: tok + 'c' }));
+  await assertSucceeds(deleteDoc(doc(db.B(), 'connectors', tok)));
+});
+
 test('anything outside groups and users is closed', async () => {
   await assertFails(setDoc(doc(db.A(), 'config', 'x'), { a: 1 }));
   await assertFails(getDoc(doc(db.A(), 'config', 'x')));

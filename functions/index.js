@@ -3,6 +3,7 @@
 //   respecting each person's quiet hours and notification preferences.
 // - joinGroup: joins a group with its invite code (the code is checked here, so non-members never read groups).
 // - calendarFeed: a private .ics feed of scheduled tasks (/cal/<token>.ics) for Google Calendar or Apple Calendar.
+// - claudeConnector: each person's private Claude connector (/mcp/<token>), to add and manage tasks from Claude.
 // Deployed by GitHub Actions (.github/workflows/deploy.yml). public/logic.js is copied in on deploy.
 'use strict';
 const { setGlobalOptions } = require('firebase-functions/v2');
@@ -12,6 +13,7 @@ const { defineString } = require('firebase-functions/params');
 const logger = require('firebase-functions/logger');
 const admin = require('firebase-admin');
 const { buildIcs } = require('./ics');
+const mcp = require('./mcp');
 let L;
 try { L = require('./logic'); } catch (e) { L = require('../public/logic.js'); }
 
@@ -152,4 +154,57 @@ exports.calendarFeed = onRequest({ invoker: 'public', memory: '256MiB' }, async 
   res.set('Cache-Control', 'private, max-age=300');
   res.set('Content-Disposition', 'inline; filename="shared-plate.ics"');
   res.send(ics);
+});
+
+// ---------- Claude connector ----------
+// POST /mcp/<token> with JSON-RPC (Model Context Protocol, streamable HTTP without streaming).
+// connectors/<token> (uid, groupId) is made in the app: Settings → Connect to Claude. Each person has their own.
+const TIME_KEYS = ['dueAt', 'showAgainOn', 'completedAt', 'createdAt', 'updatedAt', 'notifyAt', 'claimedAt'];
+function toFirestore(d) {
+  const o = {};
+  for (const [k, v] of Object.entries(d)) {
+    if (v === 'NOW') o[k] = FV.serverTimestamp();
+    else if (TIME_KEYS.includes(k) && typeof v === 'number') o[k] = TS.fromMillis(v);
+    else if (v !== undefined) o[k] = v;
+  }
+  return o;
+}
+exports.claudeConnector = onRequest({ invoker: 'public', memory: '256MiB', maxInstances: 3 }, async (req, res) => {
+  res.set('Cache-Control', 'no-store');
+  const m = /\/mcp\/([A-Za-z0-9_-]{24,64})\/?$/.exec(req.path || '');
+  if (!m) { res.status(404).json({ error: 'Not found' }); return; }
+  if (req.method !== 'POST') { res.set('Allow', 'POST'); res.status(405).send('Use POST'); return; }
+  const link = (await db.doc(`connectors/${m[1]}`).get()).data();
+  if (!link) { res.status(404).json({ error: 'This Claude link was turned off. Make a new one in Shared Plate → Settings.' }); return; }
+  const group = (await db.doc(`groups/${link.groupId}`).get()).data();
+  if (!group || !(group.members || {})[link.uid]) { res.status(403).json({ error: 'You are no longer in this household.' }); return; }
+  const user = (await db.doc(`users/${link.uid}`).get()).data() || {};
+  const col = db.collection(`groups/${link.groupId}/tasks`);
+  const fromDoc = d => {
+    const t = { id: d.id, ...d.data() };
+    for (const k of TIME_KEYS) if (t[k] && t[k].toMillis) t[k] = t[k].toMillis();
+    return t;
+  };
+  const ctx = {
+    uid: link.uid, group, tz: user.tz || 'America/New_York', now: Date.now(), L,
+    store: {
+      async list() {
+        const [open, done] = await Promise.all([
+          col.where('status', 'in', ['open', 'snoozed']).get(),
+          col.where('status', '==', 'done').orderBy('completedAt', 'desc').limit(15).get()
+        ]);
+        return [...open.docs, ...done.docs].map(fromDoc);
+      },
+      async get(id) { if (!/^[A-Za-z0-9]{1,40}$/.test(id)) return null; const d = await col.doc(id).get(); return d.exists ? fromDoc(d) : null; },
+      async add(data) { const ref = col.doc(); await ref.set(toFirestore(data)); return ref.id; },
+      async update(id, patch) { await col.doc(id).update(toFirestore(patch)); }
+    }
+  };
+  const body = req.body;
+  const msgs = Array.isArray(body) ? body : [body];
+  const out = [];
+  for (const msg of msgs) { const r = await mcp.handleMessage(msg, ctx); if (r) out.push(r); }
+  if (!out.length) { res.status(202).end(); return; }
+  res.set('Content-Type', 'application/json');
+  res.status(200).send(JSON.stringify(Array.isArray(body) ? out : out[0]));
 });
