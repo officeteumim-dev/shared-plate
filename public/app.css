@@ -339,3 +339,29 @@ section.lane .list + .cat-head { margin-top: 14px; }
 .feed p { margin: 0; }
 .feed a.btn { text-decoration: none; }
 .feed .link { min-height: 0; padding: 0; }
+
+/* ---------- Drawers at the bottom of each tile: daily tasks and snoozed ---------- */
+.drawer { margin-top: 10px; border-radius: 14px; background: color-mix(in srgb, var(--surface) 55%, transparent); }
+.drawer summary { list-style: none; min-height: 44px; display: flex; align-items: center; gap: 8px; padding: 0 12px; cursor: pointer;
+  font-weight: 700; font-size: 15px; color: color-mix(in srgb, var(--k) 70%, var(--ink)); }
+.drawer summary::-webkit-details-marker { display: none; }
+.drawer summary::after { content: "›"; margin-left: auto; font-size: 24px; line-height: 1; transform: rotate(90deg); transition: transform .15s; }
+.drawer[open] summary::after { transform: rotate(-90deg); }
+.drawer .n { font-size: 12.5px; min-width: 22px; height: 22px; padding: 0 7px; border-radius: 11px; display: inline-grid; place-items: center; background: color-mix(in srgb, var(--k) 18%, var(--surface)); }
+.drawer .list { padding: 0 6px 6px; }
+/* Daily tasks are smaller. */
+.row-wrap.compact .task { min-height: 48px; padding-top: 2px; padding-bottom: 2px; }
+.row-wrap.compact .title { font-size: 15px; }
+.row-wrap.compact .meta { font-size: 13px; margin-top: 0; }
+.row-wrap.compact .check span { width: 22px; height: 22px; }
+.row-wrap.compact .task .body { min-height: 44px; padding: 3px 0; }
+
+/* ---------- Parsha and Daf Yomi ---------- */
+.learning { display: flex; flex-wrap: wrap; gap: 4px 14px; margin: 4px 0 10px; font-size: 15px; color: var(--ink-2); }
+.learning b { color: var(--ink); }
+.pname { display: none; }
+@media (min-width: 720px) {
+  .pname { display: block; font-size: 12px; font-weight: 700; color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+}
+
+.task.cal-task { grid-template-columns: 6px 1fr; }
