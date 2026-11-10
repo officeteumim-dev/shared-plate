@@ -16,7 +16,8 @@ service cloud.firestore {
     function allowed() {
       return signedIn() && request.auth.token.email.lower() in [
         'office.teumim@gmail.com',
-        'azw.tcp@gmail.com'
+        'azw.tcp@gmail.com',
+        'riviku101@gmail.com'
       ];
     }
     function me() { return request.auth.uid; }

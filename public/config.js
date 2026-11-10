@@ -24,7 +24,8 @@
     // To open sign-up to everyone later (Phase 3), set this to null and follow the notes in those two files.
     allowlist: [
       "office.teumim@gmail.com",
-      "azw.tcp@gmail.com"
+      "azw.tcp@gmail.com",
+      "riviku101@gmail.com"
     ],
     // Unclaimed shared tasks older than this get a gentle nudge on the dashboard.
     nudgeAfterHours: 24
