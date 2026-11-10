@@ -5,6 +5,7 @@
   'use strict';
   const C = self.SP_CONFIG || {};
   const L = self.SP_LOGIC;
+  const Hb = self.SP_HEBREW;
   const $ = s => document.querySelector(s);
   const app = $('#app'), sheetRoot = $('#sheet-root'), toastEl = $('#toast');
   const params = new URLSearchParams(location.search);
@@ -73,6 +74,9 @@
     return `<span class="prio p${level}" title="Priority ${esc(p)}">${esc(p)}</span>`;
   }
   const DEFAULT_CATS = ['Work', 'Car', 'House'];
+  // Hebrew dates and holidays: a per-person display option (Settings → Calendar).
+  const hebOn = () => !!(Hb && Hb.supported && S.profile.prefs && S.profile.prefs.hebrew === true);
+  const holidayHtml = ms => Hb.holidays(ms).map(h => `<span class="hol ${h.kind}">${esc(h.name)}</span>`).join('');
   const allCats = () => { const c = L.categories([...S.open, ...S.done]); for (const d of DEFAULT_CATS) if (!c.some(x => x.toLowerCase() === d.toLowerCase())) c.push(d); return c; };
   const savedFilter = () => { try { return localStorage.getItem('sp_cat') || ''; } catch (e) { return ''; } };
 
@@ -132,7 +136,7 @@
     return {
       uid: me, email: profile.email,
       watchProfile(cb) { onProfile = cb; setTimeout(() => cb(profile)); return () => {}; },
-      saveProfile(p) { profile = { ...profile, ...p }; onProfile(profile); return Promise.resolve(); },
+      saveProfile(p) { profile = { ...profile, ...p, prefs: { ...(profile.prefs || {}), ...(p.prefs || {}) } }; onProfile(profile); return Promise.resolve(); },
       watchGroup(gid, cb) { onGroup = cb; setTimeout(() => cb({ id: gid, ...group })); return () => {}; },
       updateGroup(gid, patch) {
         for (const [k, v] of Object.entries(patch)) {
@@ -463,6 +467,7 @@
         <div>
           <h2>${!S.loaded ? 'Loading…' : todayN ? `${todayN} ${todayN === 1 ? 'thing' : 'things'} today` : 'Nothing due today'}</h2>
           <p>${esc(date)}</p>
+          ${hebOn() ? `<p class="heb-line"><span class="heb" lang="he" dir="rtl">${esc(Hb.format(t, true))}</span>${holidayHtml(t)}</p>` : ''}
           <div class="legend">
             <span><i class="dot mine"></i>Mine <b>${counts.mine}</b></span>
             <span><i class="dot theirs"></i>${esc(others1)} <b>${counts.theirs}</b></span>
@@ -594,7 +599,7 @@
     const items = calendarItems(gridStart.getTime(), gridEnd.getTime());
     const byDay = {};
     for (const it of items) (byDay[dayKey(it.at)] = byDay[dayKey(it.at)] || []).push(it);
-    const todayKey = dayKey(t), selKey = dayKey(S.calDay);
+    const todayKey = dayKey(t), selKey = dayKey(S.calDay), heb = hebOn();
     let cells = '';
     for (let i = 0; i < weeks * 7; i++) {
       const d = new Date(gridStart); d.setDate(gridStart.getDate() + i);
@@ -603,7 +608,7 @@
       const peek = list.slice(0, 2).map(it => `<span class="peek${it.done ? ' done' : ''}" style="--c:${personColor(it.who)}">${esc(it.x.title)}</span>`).join('');
       const label = `${d.toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' })}, ${list.length ? list.length + (list.length === 1 ? ' task' : ' tasks') : 'nothing scheduled'}`;
       cells += `<button class="day${inMonth ? '' : ' out'}${k === todayKey ? ' is-today' : ''}${k === selKey ? ' sel' : ''}" data-act="cal-day" data-day="${d.getTime()}" aria-label="${esc(label)}" aria-pressed="${k === selKey}">
-        <span class="num">${d.getDate()}</span><span class="marks">${marks}${list.length > 4 ? '<b>+</b>' : ''}</span><span class="peeks">${peek}${list.length > 2 ? `<span class="more-n">+${list.length - 2}</span>` : ''}</span></button>`;
+        <span class="num">${d.getDate()}</span>${heb ? `<span class="hd" lang="he">${esc(Hb.dayLetters(d.getTime()))}</span>${(() => { const hs = Hb.holidays(d.getTime()).filter(h => h.kind !== 'erev'); return hs.length ? `<span class="hol-dot ${hs[0].kind}" title="${esc(hs.map(h => h.name).join(', '))}"></span><span class="hol-name ${hs[0].kind}">${esc(hs[0].name)}</span>` : ''; })()}` : ''}<span class="marks">${marks}${list.length > 4 ? '<b>+</b>' : ''}</span><span class="peeks">${peek}${list.length > 2 ? `<span class="more-n">+${list.length - 2}</span>` : ''}</span></button>`;
     }
     const sel = byDay[selKey] || [];
     const whoName = k => k === 'shared' ? 'Shared' : k === S.uid ? 'You' : nameOf(k);
@@ -614,7 +619,7 @@
         <button class="icon-btn" data-act="settings" aria-label="Settings">${ICON.gear}</button></header>
       <div class="cal-nav">
         <button class="icon-btn" data-act="cal-prev" aria-label="Previous month">${ICON.back}</button>
-        <h2>${esc(monthName)}</h2>
+        <div class="cal-title"><h2>${esc(monthName)}</h2>${heb ? `<span class="heb" lang="he" dir="rtl">${esc((() => { const a = Hb.hebrewMonthName(gridStart.getTime() + 7 * DAYMS), z = Hb.hebrewMonthName(gridEnd.getTime() - 7 * DAYMS); return (a === z ? a : `${a} – ${z}`) + ' ' + Hb.gematria(Hb.parts(gridEnd.getTime() - 7 * DAYMS).year); })())}</span>` : ''}</div>
         <button class="icon-btn" data-act="cal-next" aria-label="Next month">${ICON.next}</button>
       </div>
       <div class="legend cal-legend">${legendKeys.map(k => `<span><i class="dot" style="background:${personColor(k)}"></i>${esc(whoName(k))}</span>`).join('')}
@@ -625,6 +630,7 @@
       </div>
       <section class="cal-agenda">
         <h3>${esc(selName)}</h3>
+        ${heb ? `<p class="heb-line"><span class="heb" lang="he" dir="rtl">${esc(Hb.format(S.calDay, true))}</span>${holidayHtml(S.calDay)}</p>` : ''}
         ${sel.length ? `<ul class="list">${sel.map(it => `<li class="row-wrap"><div class="task cal-task" style="--k:${personColor(it.who)}">
           <span class="bar"></span>
           <button class="body" data-act="edit" data-id="${esc(it.x.id)}">
@@ -955,6 +961,10 @@
         <label class="toggle"><span>When a task is due</span><input type="checkbox" id="p-due" ${p.due !== false ? 'checked' : ''}></label>
         <label class="toggle"><span>When a snoozed task comes back</span><input type="checkbox" id="p-back" ${p.back !== false ? 'checked' : ''}></label>
       </section>
+      <section class="settings-section" id="calendar-settings"><h3>Calendar</h3>
+        ${Hb && Hb.supported ? `<label class="toggle"><span>Show Hebrew dates and holidays</span><input type="checkbox" id="p-hebrew" ${hebOn() ? 'checked' : ''}></label>
+        <p class="muted small">Yamim Tovim, fasts, Chanukah, Purim and Rosh Chodesh, as kept outside Israel.</p>` : '<p class="muted small">This browser can’t show Hebrew dates.</p>'}
+      </section>
       <section class="settings-section" id="colors"><h3>Colors</h3>
         <p class="muted small">Used in the lanes and the calendar, on everyone’s phone.</p>
         ${[...members(), 'shared'].map(k => `<div class="color-row" data-key="${esc(k)}">
@@ -990,6 +1000,11 @@
         prefs: { due: sheet.querySelector('#p-due').checked, back: sheet.querySelector('#p-back').checked }
       }).catch(e => fail(e, 'save quiet hours'));
       ['#q-on', '#q-start', '#q-end', '#p-due', '#p-back'].forEach(s => sheet.querySelector(s).addEventListener('change', saveQuiet));
+      sheet.querySelector('#p-hebrew')?.addEventListener('change', e => {
+        S.profile.prefs = { ...(S.profile.prefs || {}), hebrew: e.target.checked };
+        B.saveProfile({ prefs: { hebrew: e.target.checked } }).catch(er => fail(er, 'save that setting'));
+        render();
+      });
       sheet.querySelector('#my-name').addEventListener('change', e => {
         const v = e.target.value.trim().slice(0, 60); if (!v) return;
         B.updateGroup(S.gid, { [`names.${S.uid}`]: v }).catch(er => fail(er, 'save your name'));

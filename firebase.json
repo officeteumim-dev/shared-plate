@@ -7,7 +7,7 @@
         { "key": "X-Content-Type-Options", "value": "nosniff" },
         { "key": "Referrer-Policy", "value": "strict-origin-when-cross-origin" }
       ] },
-      { "source": "/@(index.html|sw.js|config.js|app.js|app.css|logic.js|manifest.webmanifest)", "headers": [
+      { "source": "/@(index.html|sw.js|config.js|app.js|app.css|logic.js|hebrew.js|manifest.webmanifest)", "headers": [
         { "key": "Cache-Control", "value": "no-cache" }
       ] }
     ]

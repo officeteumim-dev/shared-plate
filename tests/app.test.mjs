@@ -286,3 +286,19 @@ test('dragging the handle reorders tasks, and the order sticks', async () => {
   await page.waitForFunction(() => document.querySelector('ul[data-sortable="mine/Car"] li .title')?.textContent.includes('Renew car'));
   assert.deepEqual(errors, []);
 });
+
+test('Hebrew dates and holidays appear when turned on in Settings', async () => {
+  const { page, errors } = await open();
+  assert.equal(await page.locator('.heb').count(), 0, 'off by default');
+  await page.click('[data-act=settings]');
+  await page.check('#p-hebrew');
+  await page.click('.sheet [data-act=close]');
+  assert.match(await page.textContent('.hello .heb'), /כ״ו חשוון תשפ״ז/);
+  await page.click('[data-act=calendar]');
+  // Dec 2026: Chanukah starts on the 5th.
+  await page.click('[data-act=cal-next]');
+  await page.click('.day:not(.out) >> text="5"');
+  assert.match(await page.textContent('.cal-agenda'), /Chanukah, day 1/);
+  assert.ok(await page.locator('.day.sel .hol-dot').count() === 1);
+  assert.deepEqual(errors, []);
+});

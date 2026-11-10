@@ -309,3 +309,28 @@ section.lane .list + .cat-head { margin-top: 14px; }
 .quick-cats { display: flex; flex-wrap: wrap; gap: 6px; margin-top: -4px; align-items: center; }
 .quick-cats .sep { width: 1px; height: 24px; background: var(--line); margin: 0 4px; }
 .task .body { min-height: 48px; display: flex; flex-direction: column; justify-content: center; }
+
+/* ---------- Hebrew dates and holidays ---------- */
+.heb { font-family: "Frank Ruhl Libre", "Times New Roman", serif; font-size: 15px; color: var(--ink-2); unicode-bidi: isolate; }
+.heb-line { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; margin: 2px 0 0; }
+.hol { font-size: 12.5px; font-weight: 700; padding: 1px 8px; border-radius: 999px; background: #e7e2f3; color: #4b3c7a; }
+.hol.yomtov { background: #ddeaf7; color: #1f4f86; }
+.hol.fast { background: #ece7e1; color: #5b4a38; }
+.hol.erev, .hol.minor { background: var(--surface-2); color: var(--ink-2); }
+.cal-title { text-align: center; }
+.cal-title .heb { display: block; margin-top: -2px; }
+.day { position: relative; }
+.day .hd { font-family: "Frank Ruhl Libre", "Times New Roman", serif; font-size: 11px; line-height: 1; color: var(--ink-2); margin-top: -3px; }
+.hol-dot { position: absolute; top: 5px; right: 5px; width: 7px; height: 7px; border-radius: 2px; background: #6a58a8; transform: rotate(45deg); }
+.hol-dot.yomtov { background: #2b6cb0; }
+.hol-dot.fast { background: #8a7259; }
+.hol-dot.minor { background: #a7a2b8; }
+.hol-name { display: none; }
+@media (min-width: 720px) {
+  .day .hd { position: absolute; top: 9px; right: 8px; font-size: 13px; margin: 0; }
+  .hol-dot { display: none; }
+  .hol-name { display: block; font-size: 12px; font-weight: 700; color: #4b3c7a; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .hol-name.yomtov { color: #1f4f86; }
+  .hol-name.fast { color: #5b4a38; }
+  .hol-name.minor { color: var(--ink-2); font-weight: 400; }
+}

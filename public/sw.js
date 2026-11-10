@@ -1,7 +1,7 @@
 // Shared Plate service worker: keeps the app shell available offline (task data comes from Firestore's own offline
 // cache) and receives push notifications through Firebase Cloud Messaging.
-const CACHE = 'sp-v1';
-const SHELL = ['/', '/index.html', '/app.css', '/app.js', '/logic.js', '/config.js', '/manifest.webmanifest',
+const CACHE = 'sp-v2';
+const SHELL = ['/', '/index.html', '/app.css', '/app.js', '/logic.js', '/hebrew.js', '/config.js', '/manifest.webmanifest',
   '/icons/icon-192.png', '/icons/icon-512.png', '/icons/apple-touch-icon.png', '/icons/badge-72.png'];
 const LIBS = /^https:\/\/(fonts\.googleapis\.com|fonts\.gstatic\.com|www\.gstatic\.com\/firebasejs)\//;
 
