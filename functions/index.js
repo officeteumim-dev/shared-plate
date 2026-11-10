@@ -23,7 +23,8 @@ const SITE_URL = defineString('SITE_URL', { default: '' });
 // Sign-up allowlist. Keep the same as public/config.js and firestore.rules. Phase 3: set to null to open sign-up.
 const ALLOWLIST = [
   'office.teumim@gmail.com',
-  'azw.tcp@gmail.com'
+  'azw.tcp@gmail.com',
+  'riviku101@gmail.com'
 ];
 const MAX_MEMBERS = 20;
 
