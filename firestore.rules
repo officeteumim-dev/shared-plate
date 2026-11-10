@@ -29,7 +29,8 @@ service cloud.firestore {
     function optTime(d, k) { return !(k in d) || d[k] == null || d[k] is timestamp; }
 
     // ---------- Groups ----------
-    // groups/{g}: name, createdBy, createdAt, members (uid → 'owner' | 'member'), names (uid → display name), inviteCode.
+    // groups/{g}: name, createdBy, createdAt, members (uid → 'owner' | 'member'), names (uid → display name), inviteCode,
+    // colors (uid or 'shared' → '#rrggbb', optional).
     // Joining by invite code goes through the joinGroup Cloud Function, which checks the code and the allowlist.
     match /groups/{g} {
       function validMembers(m) {
@@ -52,11 +53,15 @@ service cloud.firestore {
         // The owner manages the group: name, members, invite code. They stay an owner and can't change who created it.
         (resource.data.members[me()] == 'owner'
           && unchanged(['createdBy', 'createdAt'])
-          && request.resource.data.keys().hasOnly(['name', 'createdBy', 'createdAt', 'members', 'names', 'inviteCode'])
+          && request.resource.data.keys().hasOnly(['name', 'createdBy', 'createdAt', 'members', 'names', 'inviteCode', 'colors'])
           && str(request.resource.data.name, 60)
           && validMembers(request.resource.data.members)
           && request.resource.data.members[me()] == 'owner'
           && request.resource.data.inviteCode is string && request.resource.data.inviteCode.size() == 8)
+        // Any member can change the household colors (uid or 'shared' → '#rrggbb').
+        || (onlyChanged(['colors'])
+          && request.resource.data.colors is map
+          && request.resource.data.colors.size() <= 21)
         // Any member can change their own display name.
         || (onlyChanged(['names'])
           && request.resource.data.names.diff(resource.data.names).affectedKeys().hasOnly([me()])
