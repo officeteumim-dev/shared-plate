@@ -59,9 +59,42 @@
       const due = toMs(t.dueAt);
       if (due != null && due <= eod) out.today.push(t);
     }
-    for (const k of ['today', 'mine', 'theirs', 'shared']) out[k].sort(byDue);
+    out.today.sort(byDue);
+  for (const k of ['mine', 'theirs', 'shared']) out[k] = arrange(out[k]);
     out.snoozed.sort((a, b) => (toMs(a.showAgainOn) || 0) - (toMs(b.showAgainOn) || 0));
     out.done.sort((a, b) => (toMs(b.completedAt) || 0) - (toMs(a.completedAt) || 0));
+    return out;
+  }
+
+  // ---------- Manual order and categories ----------
+  // Tasks someone has dragged into place have an `order` and come first, in that order; the rest follow by due date.
+  function arrange(list) {
+    return list.slice().sort((a, b) => {
+      const oa = typeof a.order === 'number', ob = typeof b.order === 'number';
+      if (oa && ob && a.order !== b.order) return a.order - b.order;
+      if (oa !== ob) return oa ? -1 : 1;
+      return byDue(a, b);
+    });
+  }
+  const catOf = t => String(t.category || '').trim();
+  // Groups an arranged list by category: named categories A–Z, then tasks without one (name '').
+  function byCategory(list) {
+    const map = new Map();
+    for (const t of list) { const c = catOf(t); if (!map.has(c)) map.set(c, []); map.get(c).push(t); }
+    const names = [...map.keys()].filter(Boolean).sort((a, b) => a.localeCompare(b));
+    if (map.has('')) names.push('');
+    return names.map(name => ({ name, items: map.get(name) }));
+  }
+  function categories(tasks) {
+    const seen = new Map();
+    for (const t of tasks) { const c = catOf(t); if (c && !seen.has(c.toLowerCase())) seen.set(c.toLowerCase(), c); }
+    return [...seen.values()].sort((a, b) => a.localeCompare(b));
+  }
+  // New order numbers after moving the item at `from` to `to` in a list of ids. Only changed ones are returned.
+  function reorder(ids, from, to, current) {
+    const next = ids.slice(); const [moved] = next.splice(from, 1); next.splice(to, 0, moved);
+    const out = {};
+    next.forEach((id, i) => { const o = (i + 1) * 1000; if (!current || current[id] !== o) out[id] = o; });
     return out;
   }
 
@@ -236,7 +269,7 @@
   }
 
   return {
-    toMs, effectiveStatus, responsible, laneOf, lanes, needsNudge, isOverdue,
+    toMs, effectiveStatus, responsible, laneOf, lanes, needsNudge, isOverdue, arrange, byCategory, categories, reorder,
     normRepeat, nextDue, repeatLabel, inQuiet, quietEndsAt, minutesIn,
     notifyAtFor, recipients, planReminder, fmtWhen, fmtTime, startOfDay, endOfDay
   };

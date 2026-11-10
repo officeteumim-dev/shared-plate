@@ -159,6 +159,14 @@ test('unknown fields and oversized titles are refused', async () => {
   await assertFails(setDoc(doc(db.A(), 'groups', G, 'tasks', 'n1'), newTask({ title: '' })));
 });
 
+test('category, priority and order are accepted within limits', async () => {
+  await assertSucceeds(setDoc(doc(db.A(), 'groups', G, 'tasks', 'n1'), newTask({ category: 'Car', priority: 'A1', order: 2000 })));
+  await assertSucceeds(updateDoc(doc(db.B(), 'groups', G, 'tasks', 't1'), { order: 500 }));
+  await assertFails(setDoc(doc(db.A(), 'groups', G, 'tasks', 'n2'), newTask({ priority: 'URGENT' })));
+  await assertFails(setDoc(doc(db.A(), 'groups', G, 'tasks', 'n3'), newTask({ category: 'x'.repeat(41) })));
+  await assertFails(setDoc(doc(db.A(), 'groups', G, 'tasks', 'n4'), newTask({ order: 'first' })));
+});
+
 test('a custom repeat rule is accepted', async () => {
   await assertSucceeds(setDoc(doc(db.A(), 'groups', G, 'tasks', 'n1'), newTask({ repeat: { every: 2, unit: 'week', weekdays: [1, 4] }, dueAt: future() })));
 });
@@ -175,6 +183,19 @@ test('you can read and write only your own user record', async () => {
   await assertSucceeds(setDoc(doc(db.B(), 'users', B), { displayName: 'Leah', tokens: { tok1: { platform: 'ios' } }, quiet: { start: '22:00', end: '07:00' }, tz: 'America/New_York' }));
   await assertFails(updateDoc(doc(db.B(), 'users', A), { displayName: 'Hacked' }));
   await assertFails(setDoc(doc(db.B(), 'users', B), { isAdmin: true }));
+});
+
+test('calendar feeds: you can make one for your own household only, and only you can see or delete it', async () => {
+  const tok = 'abcdefghijklmnopqrstuvwxyz012345';
+  await assertSucceeds(setDoc(doc(db.B(), 'feeds', tok), { uid: B, groupId: G, createdAt: serverTimestamp() }));
+  await assertSucceeds(getDoc(doc(db.B(), 'feeds', tok)));
+  await assertFails(getDoc(doc(db.A(), 'feeds', tok)));
+  await assertFails(deleteDoc(doc(db.A(), 'feeds', tok)));
+  await assertSucceeds(deleteDoc(doc(db.B(), 'feeds', tok)));
+  await assertFails(setDoc(doc(db.C(), 'feeds', tok + 'x'), { uid: C, groupId: G, createdAt: serverTimestamp() }));
+  await assertFails(setDoc(doc(db.B(), 'feeds', tok + 'y'), { uid: A, groupId: G, createdAt: serverTimestamp() }));
+  await assertFails(setDoc(doc(db.B(), 'feeds', 'short'), { uid: B, groupId: G, createdAt: serverTimestamp() }));
+  await assertSucceeds(setDoc(doc(db.B(), 'users', B), { displayName: 'Leah', feedToken: tok }));
 });
 
 test('anything outside groups and users is closed', async () => {

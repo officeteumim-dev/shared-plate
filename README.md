@@ -47,6 +47,13 @@ To open sign-up later (Phase 3): set `allowlist` and `ALLOWLIST` to `null`, and 
 - **Snooze** from a task's edit sheet. It disappears until that date (8am) and comes back with a notification.
 - **Repeats:** finishing a repeating task puts the next one on the plate automatically.
 - **Quiet hours** are per person (Settings). Reminders that land in them arrive when they end.
+- **Categories:** give a task a category (Work, Car, House or your own). Each tile groups its tasks by category, and the chips above the tiles show one category at a time.
+- **Priority:** an optional short code (1, 2, 3, A, B… up to 3 characters) shown in small before the title.
+- **Reorder:** drag the dotted handle on a task to move it within its tile and category. The order is shared by the household.
+- **Calendar:** the calendar button shows a month of tasks with due dates, colored by person (Settings → Colors).
+- **Hebrew dates and holidays:** Settings → Calendar → Show Hebrew dates and holidays (diaspora observance, per person).
+- **Google Calendar / Apple Calendar:** Settings → Calendar → Make a calendar link. It's a private subscription feed (`/cal/<token>.ics`, served by the `calendarFeed` function); turning it off deletes the link.
+- **Import:** Settings → Import tasks takes an import code or link (see `openImport` in `app.js` for the format).
 
 ### iPhone
 
@@ -68,8 +75,9 @@ The decisions live in `public/logic.js` (`planReminder`), shared by the app, the
 ## Data
 
 - `groups/{groupId}`: `name`, `createdBy`, `createdAt`, `members` (uid → `owner` | `member`), `names` (uid → display name), `inviteCode`
-- `groups/{groupId}/tasks/{taskId}`: `title`, `notes`, `owner` (uid or `"shared"`), `claimedBy`, `claimedAt`, `status` (`open` | `snoozed` | `done`), `dueAt`, `showAgainOn`, `repeat` (`none` | `daily` | `weekly` | `monthly` | `{ every, unit, weekdays }`), `createdBy`, `createdAt`, `updatedAt`, `completedAt`, `completedBy`, plus reminder bookkeeping (`notifyAt`, `notifyOnly`, `notifyKind`) and repeat links (`nextId`, `repeatOf`)
-- `users/{uid}`: `displayName`, `email`, `groupIds`, `tokens` (FCM token → `{ platform, updatedAt }`), `prefs` (`due`, `back`), `quiet` (`enabled`, `start`, `end`), `tz`
+- `groups/{groupId}/tasks/{taskId}`: `title`, `notes`, `owner` (uid or `"shared"`), `claimedBy`, `claimedAt`, `status` (`open` | `snoozed` | `done`), `dueAt`, `showAgainOn`, `repeat` (`none` | `daily` | `weekly` | `monthly` | `{ every, unit, weekdays }`), `createdBy`, `createdAt`, `updatedAt`, `completedAt`, `completedBy`, plus reminder bookkeeping (`notifyAt`, `notifyOnly`, `notifyKind`) and repeat links (`nextId`, `repeatOf`), plus `category`, `priority` and `order`
+- `feeds/{token}`: `uid`, `groupId`, `createdAt` (calendar feed links)
+- `users/{uid}`: `displayName`, `email`, `groupIds`, `feedToken`, `tokens` (FCM token → `{ platform, updatedAt }`), `prefs` (`due`, `back`), `quiet` (`enabled`, `start`, `end`), `tz`
 
 `names` lives on the group so each person can see the other's name without reading their private user record. Security rules: you can only read and write the households you belong to; only the owner manages members; your user record is yours alone.
 
@@ -85,7 +93,9 @@ The decisions live in `public/logic.js` (`planReminder`), shared by the app, the
 | File | What it is |
 | --- | --- |
 | `public/index.html`, `app.js`, `app.css` | The app |
-| `public/logic.js` | Lanes, repeats, quiet hours and reminder decisions |
+| `public/logic.js` | Lanes, order, categories, repeats, quiet hours and reminder decisions |
+| `public/hebrew.js` | Hebrew dates and holidays (uses the browser's built-in Hebrew calendar) |
+| `functions/ics.js` | Builds the calendar feed |
 | `public/config.js` | Firebase settings, push key and allowlist |
 | `public/sw.js` | Offline shell and push notifications |
 | `functions/index.js` | Reminders and joining by code |

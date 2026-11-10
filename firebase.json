@@ -1,27 +1,64 @@
 {
   "hosting": {
     "public": "public",
-    "ignore": ["**/.*"],
+    "ignore": [
+      "**/.*"
+    ],
     "headers": [
-      { "source": "**", "headers": [
-        { "key": "X-Content-Type-Options", "value": "nosniff" },
-        { "key": "Referrer-Policy", "value": "strict-origin-when-cross-origin" }
-      ] },
-      { "source": "/@(index.html|sw.js|config.js|app.js|app.css|logic.js|manifest.webmanifest)", "headers": [
-        { "key": "Cache-Control", "value": "no-cache" }
-      ] }
+      {
+        "source": "**",
+        "headers": [
+          {
+            "key": "X-Content-Type-Options",
+            "value": "nosniff"
+          },
+          {
+            "key": "Referrer-Policy",
+            "value": "strict-origin-when-cross-origin"
+          }
+        ]
+      },
+      {
+        "source": "/@(index.html|sw.js|config.js|app.js|app.css|logic.js|hebrew.js|manifest.webmanifest)",
+        "headers": [
+          {
+            "key": "Cache-Control",
+            "value": "no-cache"
+          }
+        ]
+      }
+    ],
+    "rewrites": [
+      {
+        "source": "/cal/**",
+        "function": {
+          "functionId": "calendarFeed",
+          "region": "us-central1"
+        }
+      }
     ]
   },
-  "firestore": { "rules": "firestore.rules", "indexes": "firestore.indexes.json" },
-  "functions": [{
-    "source": "functions",
-    "codebase": "default",
-    "runtime": "nodejs22",
-    "predeploy": ["cp \"$PROJECT_DIR/public/logic.js\" \"$RESOURCE_DIR/logic.js\""]
-  }],
+  "firestore": {
+    "rules": "firestore.rules",
+    "indexes": "firestore.indexes.json"
+  },
+  "functions": [
+    {
+      "source": "functions",
+      "codebase": "default",
+      "runtime": "nodejs22",
+      "predeploy": [
+        "cp \"$PROJECT_DIR/public/logic.js\" \"$RESOURCE_DIR/logic.js\""
+      ]
+    }
+  ],
   "emulators": {
-    "firestore": { "port": 8080 },
-    "ui": { "enabled": false },
+    "firestore": {
+      "port": 8080
+    },
+    "ui": {
+      "enabled": false
+    },
     "singleProjectMode": true
   }
 }

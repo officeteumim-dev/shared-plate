@@ -82,7 +82,7 @@ service cloud.firestore {
           let members = groupData(g).members;
           return d.keys().hasOnly(['title', 'notes', 'owner', 'claimedBy', 'claimedAt', 'status', 'dueAt', 'showAgainOn',
               'repeat', 'createdBy', 'createdAt', 'updatedAt', 'completedAt', 'completedBy', 'notifyAt', 'notifyOnly',
-              'notifyKind', 'nextId', 'repeatOf'])
+              'notifyKind', 'nextId', 'repeatOf', 'category', 'priority', 'order'])
             && str(d.title, 200)
             && optStr(d, 'notes', 2000)
             && d.status in ['open', 'snoozed', 'done']
@@ -93,6 +93,8 @@ service cloud.firestore {
             && optTime(d, 'notifyAt') && optTime(d, 'claimedAt')
             && (d.get('completedBy', null) == null || d.completedBy in members)
             && (!('repeat' in d) || d.repeat in ['none', 'daily', 'weekly', 'monthly'] || d.repeat is map)
+            && optStr(d, 'category', 40) && optStr(d, 'priority', 3)
+            && (!('order' in d) || d.order is number)
             && (d.get('notifyOnly', null) == null || d.notifyOnly is list)
             && d.get('notifyKind', null) in [null, 'due', 'back'];
         }
@@ -113,7 +115,7 @@ service cloud.firestore {
     // Only you can read or change your own record. The other person's name is shown from the group's `names` map.
     match /users/{u} {
       function validUser(d) {
-        return d.keys().hasOnly(['displayName', 'email', 'groupIds', 'tokens', 'prefs', 'quiet', 'tz', 'createdAt', 'updatedAt'])
+        return d.keys().hasOnly(['displayName', 'email', 'groupIds', 'tokens', 'prefs', 'quiet', 'tz', 'createdAt', 'updatedAt', 'feedToken'])
           && optStr(d, 'displayName', 60)
           && (!('groupIds' in d) || (d.groupIds is list && d.groupIds.size() <= 20))
           && (!('tokens' in d) || (d.tokens is map && d.tokens.size() <= 10))
@@ -124,6 +126,18 @@ service cloud.firestore {
       allow read: if allowed() && me() == u;
       allow create, update: if allowed() && me() == u && validUser(request.resource.data);
       allow delete: if signedIn() && me() == u;
+    }
+
+    // ---------- Calendar feeds ----------
+    // feeds/{token}: uid, groupId, createdAt. The token is the secret in the calendar link; the calendarFeed function reads it.
+    match /feeds/{t} {
+      allow read: if allowed() && resource.data.uid == me();
+      allow create: if allowed() && t.size() >= 24
+        && request.resource.data.keys().hasOnly(['uid', 'groupId', 'createdAt'])
+        && request.resource.data.uid == me()
+        && request.resource.data.groupId is string
+        && isMember(request.resource.data.groupId);
+      allow delete: if signedIn() && resource.data.uid == me();
     }
   }
 }
