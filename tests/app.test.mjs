@@ -322,10 +322,31 @@ test('Settings makes a calendar link for Apple and Google Calendar, and can turn
 });
 
 
-test('daily tasks are shown smaller, in the main list', async () => {
-  const { page } = await open();
+test('daily tasks come onto the tile 3 hours before they are due; the Daily list always has them', async () => {
+  const { page, errors } = await open(); // 9:00am: vitamins due 9:30 (on the tile), dishes due 8pm (not yet)
+  assert.ok((await laneTitles(page, 'mine')).includes('Take vitamins'));
+  assert.equal(await page.locator('section.lane.mine > ul .row-wrap.compact:has-text("Take vitamins")').count(), 1, 'shown smaller');
+  assert.ok(!(await laneTitles(page, 'shared')).includes('Do the dishes'));
+  const d = page.locator('section.lane.shared details[data-drawer="shared-daily"]');
+  assert.match(await d.locator('summary').textContent(), /Daily list\s*1/);
+  await d.locator('summary').click();
+  assert.match(await d.textContent(), /Do the dishes/);
+  assert.match(await page.textContent('section.lane.mine details[data-drawer="mine-daily"] summary'), /Daily list\s*1/, 'the list includes ones already showing');
+  assert.deepEqual(errors, []);
+});
+
+test('at 5pm the 8pm daily task is on the tile', async () => {
+  const { page } = await open({ at: '2026-11-06T17:00:00-05:00' });
   assert.ok((await laneTitles(page, 'shared')).includes('Do the dishes'));
-  assert.equal(await page.locator('section.lane.shared > ul .row-wrap.compact:has-text("Do the dishes")').count(), 1);
+});
+
+test('tasks more than two weeks out wait in their own drawer', async () => {
+  const { page } = await open();
+  assert.ok(!(await laneTitles(page, 'mine')).includes('Renew passports'));
+  const d = page.locator('section.lane.mine details[data-drawer="mine-far"]');
+  assert.match(await d.locator('summary').textContent(), /More than 2 weeks out\s*1/);
+  await d.locator('summary').click();
+  assert.match(await d.textContent(), /Renew passports/);
 });
 
 test('a shared repeating task someone took comes back tomorrow on the Shared plate, unclaimed', async () => {
@@ -334,8 +355,9 @@ test('a shared repeating task someone took comes back tomorrow on the Shared pla
   await page.waitForFunction(() => [...document.querySelectorAll('section.lane.mine > ul .title')].some(e => e.textContent.includes('Do the dishes')));
   await page.click('section.lane.mine .row-wrap:has-text("Do the dishes") [data-act=done]');
   await page.waitForFunction(() => /Next one/.test(document.querySelector('#toast')?.textContent || ''));
-  await page.waitForFunction(() => [...document.querySelectorAll('section.lane.shared > ul .title')].some(e => e.textContent.includes('Do the dishes')));
+  await page.waitForFunction(() => document.querySelector('section.lane.shared [data-drawer="shared-daily"]')?.textContent.includes('Do the dishes'));
   assert.ok(!(await laneTitles(page, 'mine')).includes('Do the dishes'));
+  assert.doesNotMatch(await page.textContent('section.lane.mine [data-drawer="mine-daily"]'), /Do the dishes/, 'not on my list any more');
 });
 
 test('snoozed tasks sit in a drawer at the bottom of their person’s tile', async () => {
