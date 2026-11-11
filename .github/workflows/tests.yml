@@ -19,7 +19,7 @@ jobs:
         run: node --check functions/index.js && node --check public/app.js && node --check public/sw.js
       - name: Install
         working-directory: tests
-        run: npm install && npm install --no-save @hebcal/core @hebcal/learning && npx playwright install --with-deps chromium
+        run: npm install && npm install --no-save @hebcal/core @hebcal/learning && (npx playwright install --with-deps chromium || npx playwright install chromium)
       - name: Run tests
         working-directory: tests
         run: npm test
