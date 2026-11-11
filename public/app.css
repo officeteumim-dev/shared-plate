@@ -345,8 +345,8 @@ section.lane .list + .cat-head { margin-top: 14px; }
 .drawer summary { list-style: none; min-height: 44px; display: flex; align-items: center; gap: 8px; padding: 0 12px; cursor: pointer;
   font-weight: 700; font-size: 15px; color: color-mix(in srgb, var(--k) 70%, var(--ink)); }
 .drawer summary::-webkit-details-marker { display: none; }
-.drawer summary::after { content: "›"; margin-left: auto; font-size: 24px; line-height: 1; transform: rotate(90deg); transition: transform .15s; }
-.drawer[open] summary::after { transform: rotate(-90deg); }
+.drawer summary::after { content: ""; margin: -4px 4px 0 auto; width: 9px; height: 9px; border-right: 2.5px solid currentColor; border-bottom: 2.5px solid currentColor; transform: rotate(45deg); transition: transform .15s, margin .15s; }
+.drawer[open] summary::after { transform: rotate(225deg); margin-top: 6px; }
 .drawer .n { font-size: 12.5px; min-width: 22px; height: 22px; padding: 0 7px; border-radius: 11px; display: inline-grid; place-items: center; background: color-mix(in srgb, var(--k) 18%, var(--surface)); }
 .drawer .list { padding: 0 6px 6px; }
 /* Daily tasks are smaller. */
