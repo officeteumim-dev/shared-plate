@@ -78,7 +78,11 @@
   const isDaily = x => { const r = L.normRepeat(x.repeat); return !!r && r.unit === 'day' && r.every === 1; };
   // Daily tasks come onto the tile 3 hours before they're due (and stay while overdue); the "Daily list" always has them.
   const DAILY_LEAD = 3 * H;
-  const dailyShowing = (x, t) => { const d = L.toMs(x.dueAt); return d == null || d - t <= DAILY_LEAD; };
+  // Weekly tasks work the same way: always in the "Weekly list", and on the tile from a day before they're due.
+  const isWeekly = x => { const r = L.normRepeat(x.repeat); return !!r && r.unit === 'week'; };
+  const WEEKLY_LEAD = 24 * H;
+  const recurLead = x => (isDaily(x) ? DAILY_LEAD : isWeekly(x) ? WEEKLY_LEAD : null);
+  const dailyShowing = (x, t) => { const d = L.toMs(x.dueAt), lead = recurLead(x); return lead == null || d == null || d - t <= lead; };
   // Anything due more than two weeks from now waits in a "More than 2 weeks out" drawer.
   const FAR = 14 * DAYMS;
   const farOut = (x, t) => { const d = L.toMs(x.dueAt); return d != null && d - t > FAR; };
@@ -491,7 +495,7 @@
     const counts = { mine: l.mine.length, theirs: l.theirs.length, shared: l.shared.length };
     const others1 = others().length === 1 ? (S.group.names?.[others()[0]] || 'Them') : 'Theirs';
     const date = new Date(t).toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' });
-    l.today = l.today.filter(x => !isDaily(x) || dailyShowing(x, t));
+    l.today = l.today.filter(x => dailyShowing(x, t));
     const todayN = l.today.length;
     const snoozedIn = k => l.snoozed.filter(x => L.laneOf(x, S.uid) === k);
     app.innerHTML = `
@@ -558,22 +562,23 @@
   }
 
   function lane(k, title, all, t, empty, snoozed) {
-    const daily = all.filter(isDaily);
-    const far = all.filter(x => !isDaily(x) && farOut(x, t));
-    const list = all.filter(x => (isDaily(x) ? dailyShowing(x, t) : !farOut(x, t)));
+    const daily = all.filter(isDaily), weekly = all.filter(isWeekly);
+    const far = all.filter(x => recurLead(x) == null && farOut(x, t));
+    const list = all.filter(x => (recurLead(x) != null ? dailyShowing(x, t) : !farOut(x, t)));
     const open = S.openDrawers || (S.openDrawers = new Set());
     const drawer = (id, label, items, snz) => items.length ? `<details class="drawer" data-drawer="${k}-${id}" ${open.has(`${k}-${id}`) ? 'open' : ''}>
         <summary>${label} <span class="n">${items.length}</span></summary>
         <ul class="list">${items.map(x => row(x, t, k, snz)).join('')}</ul></details>` : '';
     return `<section class="lane ${k}" aria-label="${esc(title)}">
       <div class="lane-head"><h3>${esc(title)}</h3><span class="count">${list.length}</span></div>
-      ${!list.length ? `<div class="empty">${esc(S.cat ? `Nothing in ${S.cat} here.` : daily.length || far.length || snoozed.length ? 'Nothing due right now.' : empty)}</div>`
+      ${!list.length ? `<div class="empty">${esc(S.cat ? `Nothing in ${S.cat} here.` : daily.length || weekly.length || far.length || snoozed.length ? 'Nothing due right now.' : empty)}</div>`
         : (() => {
           const groups = L.byCategory(list);
           const named = groups.some(g => g.name) && !S.cat;
           return groups.map(g => `${named ? `<h4 class="cat-head">${esc(g.name || 'Other')}</h4>` : ''}<ul class="list" data-sortable="${esc(k + '/' + g.name)}">${g.items.map(x => row(x, t, k, false, true)).join('')}</ul>`).join('');
         })()}
       ${drawer('daily', 'Daily list', daily, false)}
+      ${drawer('weekly', 'Weekly list', weekly, false)}
       ${drawer('far', 'More than 2 weeks out', far, false)}
       ${drawer('snoozed', 'Snoozed', snoozed, true)}
     </section>`;

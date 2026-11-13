@@ -95,17 +95,14 @@ test('marking done moves it to Completed, and Undo brings it back', async () => 
 
 test('finishing a repeating task schedules the next one', async () => {
   const { page } = await open();
-  await page.click('section.lane.mine .row-wrap:has-text("Pick up challah") [data-act=done]');
+  await page.click('section.lane.mine > ul .row-wrap:has-text("Pick up challah") [data-act=done]');
   await page.waitForFunction(() => /Next one/.test(document.querySelector('#toast')?.textContent || ''));
-  // The list redraws just after the toast. Wait until exactly one challah row is left: next week's copy.
-  const challah = () => page.$$eval('section.lane.mine .row-wrap', els =>
-    els.filter(e => e.querySelector('.title')?.textContent === 'Pick up challah').map(e => e.querySelector('.meta')?.textContent || ''));
-  await page.waitForFunction(() => [...document.querySelectorAll('section.lane.mine .row-wrap .meta')]
-    .filter(m => m.closest('.row-wrap').querySelector('.title').textContent === 'Pick up challah')
-    .every(m => !/Today|Overdue/.test(m.textContent)));
-  const metas = await challah();
-  assert.equal(metas.length, 1, 'the next week’s copy is on the plate');
-  assert.doesNotMatch(metas[0], /Today|Overdue/);
+  // Next week's copy isn't due for a week, so it waits in the Weekly list, not on the tile.
+  await page.waitForFunction(() => ![...document.querySelectorAll('section.lane.mine > ul .title')].some(e => e.textContent.includes('Pick up challah')));
+  const weekly = page.locator('section.lane.mine details[data-drawer="mine-weekly"]');
+  await weekly.locator('summary').click();
+  assert.match(await weekly.textContent(), /Pick up challah/);
+  assert.doesNotMatch(await weekly.textContent(), /Today|Overdue/);
 });
 
 test('swiping a task to the right marks it done', async () => {
@@ -464,4 +461,25 @@ test('a wide screen opens the calendar to the month', async () => {
   await page.click('[data-act=calendar]');
   assert.equal(await page.getAttribute('[data-act=cal-mode][data-mode=month]', 'aria-pressed'), 'true');
   assert.equal(await page.locator('.day').count() >= 28, true);
+});
+
+
+test('weekly tasks are always in the Weekly list, and on the tile from a day before they are due', async () => {
+  const { page, errors } = await open(); // Friday 9am: challah due today 3pm (on the tile)
+  assert.ok((await laneTitles(page, 'mine')).includes('Pick up challah'));
+  assert.match(await page.textContent('section.lane.mine details[data-drawer="mine-weekly"] summary'), /Weekly list\s*1/);
+  assert.deepEqual(errors, []);
+});
+
+test('a weekly task due in two days waits in the Weekly list', async () => {
+  const { page } = await open({ at: '2026-11-07T09:00:00-05:00' }); // Saturday 9am; the new task is due Monday 6pm
+  await page.click('.fab');
+  await page.fill('#task-form [name=title]', 'Water the garden');
+  await page.click('#task-form details.more summary');
+  await page.fill('#task-form [name=date]', '2026-11-09');
+  await page.fill('#task-form [name=time]', '18:00');
+  await page.selectOption('#task-form [name=repeat]', 'weekly');
+  await page.click('#task-form [type=submit]');
+  await page.waitForFunction(() => document.querySelector('section.lane.mine [data-drawer="mine-weekly"]')?.textContent.includes('Water the garden'));
+  assert.ok(!(await laneTitles(page, 'mine')).includes('Water the garden'));
 });
