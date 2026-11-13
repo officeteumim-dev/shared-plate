@@ -14,14 +14,20 @@ function household(uid = 'avi') {
     ['t3', { title: 'Renew registration', owner: 'avi', status: 'open', repeat: 'none', category: 'Car', priority: '2', dueAt: Date.parse('2026-11-11T09:00:00-05:00') }]
   ]);
   let n = 0;
+  const shop = new Map([['s1', { name: 'Milk', list: 'Groceries', checked: false, addedBy: 'leah' }]]);
   const store = {
+    async shopList() { return [...shop].map(([id, x]) => ({ id, ...x })); },
+    async shopGet(id) { return shop.has(id) ? { id, ...shop.get(id) } : null; },
+    async shopAdd(d) { const id = 's' + (shop.size + 1); shop.set(id, { ...d }); return id; },
+    async shopUpdate(id, p) { shop.set(id, { ...shop.get(id), ...p }); },
+    async shopDelete(id) { shop.delete(id); },
     async list() { return [...tasks].map(([id, t]) => ({ id, ...t })); },
     async get(id) { return tasks.has(id) ? { id, ...tasks.get(id) } : null; },
     async add(d) { const id = 'n' + (++n); tasks.set(id, { ...d }); return id; },
     async update(id, p) { tasks.set(id, { ...tasks.get(id), ...p }); }
   };
   const group = { name: 'Our home', members: { avi: 'owner', leah: 'member' }, names: { avi: 'Avi', leah: 'Leah' } };
-  return { tasks, ctx: { uid, group, tz: 'America/New_York', now: NOW, store, L } };
+  return { tasks, shop, ctx: { uid, group, tz: 'America/New_York', now: NOW, store, L } };
 }
 const call = async (ctx, name, args) => {
   const r = await mcp.handleMessage({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name, arguments: args } }, ctx);
@@ -35,7 +41,7 @@ test('the handshake and the tool list', async () => {
   assert.ok(init.result.capabilities.tools);
   assert.equal(await mcp.handleMessage({ jsonrpc: '2.0', method: 'notifications/initialized' }, ctx), null);
   const list = await mcp.handleMessage({ jsonrpc: '2.0', id: 2, method: 'tools/list' }, ctx);
-  assert.deepEqual(list.result.tools.map(t => t.name), ['get_household', 'list_tasks', 'add_task', 'update_task', 'complete_task', 'take_task']);
+  assert.deepEqual(list.result.tools.map(t => t.name), ['get_household', 'list_tasks', 'add_task', 'update_task', 'complete_task', 'add_shopping_items', 'list_shopping', 'update_shopping_item', 'take_task']);
   const unknown = await mcp.handleMessage({ jsonrpc: '2.0', id: 3, method: 'resources/list' }, ctx);
   assert.equal(unknown.error.code, -32601);
 });
@@ -103,4 +109,20 @@ test('mistakes come back as clear messages, not failures', async () => {
   assert.match((await call(ctx, 'complete_task', { task_id: 'nope' })).text, /no task with id/);
   assert.match((await call(ctx, 'add_task', { title: 'X', due: 'next tuesday' })).text, /couldn't read the date/);
   assert.equal((await call(ctx, 'add_task', { title: '' })).error, true);
+});
+
+
+test('shopping: add (skipping ones already there), list, check off, move and remove', async () => {
+  const { ctx, shop } = household();
+  assert.match((await call(ctx, 'add_shopping_items', { items: ['milk', 'eggs', 'bread'] })).text, /Added to Groceries: eggs, bread\. \(1 already on the list\.\)/);
+  assert.match((await call(ctx, 'add_shopping_items', { items: ['phone charger'], list: 'Amazon' })).text, /Added to Amazon/);
+  const list = (await call(ctx, 'list_shopping', {})).text;
+  assert.match(list, /Groceries \(3 to get\)/);
+  assert.match(list, /Amazon \(1 to get\)/);
+  assert.match((await call(ctx, 'update_shopping_item', { item_id: 's1', checked: true })).text, /Milk: checked off, on Groceries/);
+  assert.equal(shop.get('s1').checkedBy, 'avi');
+  assert.match((await call(ctx, 'update_shopping_item', { item_id: 's2', list: 'Costco' })).text, /on Costco/);
+  assert.match((await call(ctx, 'update_shopping_item', { item_id: 's3', remove: true })).text, /Removed bread/);
+  assert.equal(shop.has('s3'), false);
+  assert.match((await call(ctx, 'update_shopping_item', { item_id: 'zz' })).text, /no shopping item/);
 });

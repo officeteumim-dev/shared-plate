@@ -76,6 +76,25 @@ service cloud.firestore {
 
       allow delete: if allowed() && resource.data.members[me()] == 'owner';
 
+      // ---------- Shopping list ----------
+      // groups/{g}/shopping/{item}: name, list (Groceries, Amazon…), note, checked, checkedBy, checkedAt, addedBy, createdAt.
+      match /shopping/{i} {
+        function validItem(d) {
+          let members = groupData(g).members;
+          return d.keys().hasOnly(['name', 'list', 'note', 'checked', 'checkedBy', 'checkedAt', 'addedBy', 'createdAt', 'order'])
+            && str(d.name, 120) && str(d.list, 40) && optStr(d, 'note', 200)
+            && d.checked is bool
+            && (d.get('checkedBy', null) == null || d.checkedBy in members)
+            && d.addedBy in members
+            && optTime(d, 'checkedAt') && optTime(d, 'createdAt')
+            && (!('order' in d) || d.order is number);
+        }
+        allow read: if isMember(g);
+        allow create: if isMember(g) && validItem(request.resource.data);
+        allow update: if isMember(g) && validItem(request.resource.data) && unchanged(['addedBy', 'createdAt']);
+        allow delete: if isMember(g);
+      }
+
       // ---------- Tasks ----------
       match /tasks/{t} {
         function validTask(d) {

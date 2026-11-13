@@ -98,6 +98,38 @@ const TOOLS = [
     inputSchema: { type: 'object', properties: { task_id: { type: 'string' } }, required: ['task_id'], additionalProperties: false }
   },
   {
+    name: 'add_shopping_items',
+    description: 'Add items to the household shopping list. Lists are like Groceries, Amazon, Costco or Pharmacy; new list names are fine.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        items: { type: 'array', items: { type: 'string' }, description: 'Item names, e.g. ["milk", "eggs"].' },
+        list: { type: 'string', description: 'Which list. Default Groceries.' }
+      },
+      required: ['items'],
+      additionalProperties: false
+    }
+  },
+  {
+    name: 'list_shopping',
+    description: 'Show the shopping list: what still needs to be bought, by list, with item ids.',
+    inputSchema: { type: 'object', properties: { list: { type: 'string', description: 'Only this list.' }, include_checked: { type: 'boolean' } }, additionalProperties: false },
+    annotations: { readOnlyHint: true }
+  },
+  {
+    name: 'update_shopping_item',
+    description: 'Check an item off (or back on), move it to another list, rename it, or remove it.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        item_id: { type: 'string' }, checked: { type: 'boolean' }, list: { type: 'string', description: 'Move to this list.' },
+        name: { type: 'string' }, note: { type: 'string' }, remove: { type: 'boolean', description: 'Delete the item.' }
+      },
+      required: ['item_id'],
+      additionalProperties: false
+    }
+  },
+  {
     name: 'take_task',
     description: 'Take an unclaimed shared task, so it moves to my plate.',
     inputSchema: { type: 'object', properties: { task_id: { type: 'string' } }, required: ['task_id'], additionalProperties: false }
@@ -223,6 +255,41 @@ async function callTool(name, args, ctx) {
       return msg;
     }
 
+    case 'add_shopping_items': {
+      const names = (Array.isArray(args.items) ? args.items : [args.items]).map(x => clean(x, 120)).filter(Boolean).slice(0, 40);
+      if (!names.length) throw new UserError('Say what to add.');
+      const list = clean(args.list, 40) || 'Groceries';
+      const existing = (await store.shopList()).filter(x => !x.checked && x.list.toLowerCase() === list.toLowerCase()).map(x => x.name.toLowerCase());
+      const fresh = names.filter(n => !existing.includes(n.toLowerCase()));
+      for (const name of fresh) await store.shopAdd({ name, list, note: '', checked: false, addedBy: uid, createdAt: 'NOW' });
+      const skipped = names.length - fresh.length;
+      return `Added to ${list}: ${fresh.join(', ') || 'nothing new'}.${skipped ? ` (${skipped} already on the list.)` : ''}`;
+    }
+    case 'list_shopping': {
+      const items = await store.shopList();
+      const lists = [...new Set(items.map(x => x.list))].filter(l => !args.list || l.toLowerCase() === String(args.list).toLowerCase()).sort();
+      const out = [];
+      for (const l of lists) {
+        const todo = items.filter(x => x.list === l && !x.checked), got = items.filter(x => x.list === l && x.checked);
+        out.push(`${l} (${todo.length} to get):`, ...todo.map(x => `  [${x.id}] ${x.name}${x.note ? ' — ' + x.note : ''}`));
+        if (args.include_checked && got.length) out.push(`  Checked: ${got.map(x => `[${x.id}] ${x.name}`).join(', ')}`);
+      }
+      return out.length ? out.join('\n') : 'The shopping list is empty.';
+    }
+    case 'update_shopping_item': {
+      const x = await store.shopGet(String(args.item_id || ''));
+      if (!x) throw new UserError(`There's no shopping item with id "${args.item_id}". Use list_shopping to see ids.`);
+      if (args.remove) { await store.shopDelete(x.id); return `Removed ${x.name}.`; }
+      const patch = {};
+      if (args.checked != null) Object.assign(patch, args.checked ? { checked: true, checkedBy: uid, checkedAt: 'NOW' } : { checked: false, checkedBy: null, checkedAt: null });
+      if (args.list != null) { patch.list = clean(args.list, 40); if (!patch.list) throw new UserError('The list name can’t be empty.'); }
+      if (args.name != null) { patch.name = clean(args.name, 120); if (!patch.name) throw new UserError('The name can’t be empty.'); }
+      if (args.note != null) patch.note = clean(args.note, 200);
+      await store.shopUpdate(x.id, patch);
+      const m = { ...x, ...patch };
+      return `${m.name}: ${m.checked ? 'checked off' : 'to get'}, on ${m.list}.`;
+    }
+
     case 'take_task': {
       const t = await getTask(args.task_id);
       if (t.owner !== 'shared') throw new UserError(`That isn’t a shared task; it belongs to ${nameOf(t.owner)}.`);
@@ -249,7 +316,8 @@ async function handleMessage(msg, ctx) {
         capabilities: { tools: { listChanged: false } },
         serverInfo: { name: 'shared-plate', title: 'Shared Plate', version: '1.0.0' },
         instructions: 'Shared Plate is a household task list. Every task has one owner: a person, or "shared" for whoever takes it. ' +
-          'Use get_household to learn the names, today\'s date and the time zone; list_tasks to find task ids; add_task for new reminders and events.'
+          'Use get_household to learn the names, today\'s date and the time zone; list_tasks to find task ids; add_task for new reminders and events. ' +
+          'There is also a shared shopping list (add_shopping_items, list_shopping, update_shopping_item).'
       });
     }
     case 'ping': return reply({});

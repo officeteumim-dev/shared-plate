@@ -159,7 +159,7 @@ exports.calendarFeed = onRequest({ invoker: 'public', memory: '256MiB' }, async 
 // ---------- Claude connector ----------
 // POST /mcp/<token> with JSON-RPC (Model Context Protocol, streamable HTTP without streaming).
 // connectors/<token> (uid, groupId) is made in the app: Settings → Connect to Claude. Each person has their own.
-const TIME_KEYS = ['dueAt', 'showAgainOn', 'completedAt', 'createdAt', 'updatedAt', 'notifyAt', 'claimedAt'];
+const TIME_KEYS = ['dueAt', 'showAgainOn', 'completedAt', 'createdAt', 'updatedAt', 'notifyAt', 'claimedAt', 'checkedAt'];
 function toFirestore(d) {
   const o = {};
   for (const [k, v] of Object.entries(d)) {
@@ -180,6 +180,7 @@ exports.claudeConnector = onRequest({ invoker: 'public', memory: '256MiB', maxIn
   if (!group || !(group.members || {})[link.uid]) { res.status(403).json({ error: 'You are no longer in this household.' }); return; }
   const user = (await db.doc(`users/${link.uid}`).get()).data() || {};
   const col = db.collection(`groups/${link.groupId}/tasks`);
+  const shop = db.collection(`groups/${link.groupId}/shopping`);
   const fromDoc = d => {
     const t = { id: d.id, ...d.data() };
     for (const k of TIME_KEYS) if (t[k] && t[k].toMillis) t[k] = t[k].toMillis();
@@ -197,7 +198,12 @@ exports.claudeConnector = onRequest({ invoker: 'public', memory: '256MiB', maxIn
       },
       async get(id) { if (!/^[A-Za-z0-9]{1,40}$/.test(id)) return null; const d = await col.doc(id).get(); return d.exists ? fromDoc(d) : null; },
       async add(data) { const ref = col.doc(); await ref.set(toFirestore(data)); return ref.id; },
-      async update(id, patch) { await col.doc(id).update(toFirestore(patch)); }
+      async update(id, patch) { await col.doc(id).update(toFirestore(patch)); },
+      async shopList() { const q = await shop.get(); return q.docs.map(fromDoc); },
+      async shopGet(id) { if (!/^[A-Za-z0-9]{1,40}$/.test(id)) return null; const d = await shop.doc(id).get(); return d.exists ? fromDoc(d) : null; },
+      async shopAdd(data) { const ref = shop.doc(); await ref.set(toFirestore(data)); return ref.id; },
+      async shopUpdate(id, patch) { await shop.doc(id).update(toFirestore(patch)); },
+      async shopDelete(id) { await shop.doc(id).delete(); }
     }
   };
   const body = req.body;

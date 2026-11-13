@@ -483,3 +483,51 @@ test('a weekly task due in two days waits in the Weekly list', async () => {
   await page.waitForFunction(() => document.querySelector('section.lane.mine [data-drawer="mine-weekly"]')?.textContent.includes('Water the garden'));
   assert.ok(!(await laneTitles(page, 'mine')).includes('Water the garden'));
 });
+
+
+test('shopping list: add several at once, check off, uncheck, and clear', async () => {
+  const { page, errors } = await open();
+  assert.match(await page.getAttribute('[data-act=shopping]', 'aria-label'), /4 to get/);
+  await page.click('[data-act=shopping]');
+  assert.match(await page.textContent('.shop-list[data-list="Groceries"]'), /Milk/);
+  await page.fill('#shop-add input', 'bananas, coffee');
+  await page.press('#shop-add input', 'Enter');
+  await page.waitForFunction(() => /coffee/.test(document.querySelector('.shop-list[data-list="Groceries"]').textContent));
+  assert.match(await page.textContent('.shop-list[data-list="Groceries"] .count'), /^4$/);
+  await page.click('.shop-list[data-list="Groceries"] .shop-item:has-text("bananas") [data-act=shop-toggle]');
+  await page.waitForFunction(() => document.querySelector('.shop-list[data-list="Groceries"] .count').textContent === '3');
+  const got = page.locator('.shop-list[data-list="Groceries"] details.got');
+  await got.locator('summary').click();
+  assert.match(await got.textContent(), /bananas/);
+  await got.locator('[data-act=shop-clear]').click();
+  await page.waitForFunction(() => !document.querySelector('.shop-list[data-list="Groceries"] details.got'));
+  assert.deepEqual(errors, []);
+});
+
+test('shopping list: move an item from Groceries to Amazon, or to a new list', async () => {
+  const { page } = await open();
+  await page.click('[data-act=shopping]');
+  await page.click('.shop-list[data-list="Groceries"] .shop-item:has-text("Challah flour") [data-act=shop-edit]');
+  await page.click('.shop-move [data-move="Amazon"]');
+  await page.click('#item-form [type=submit]');
+  await page.waitForFunction(() => /Challah flour/.test(document.querySelector('.shop-list[data-list="Amazon"]').textContent));
+  assert.doesNotMatch(await page.textContent('.shop-list[data-list="Groceries"]'), /Challah flour/);
+  await page.click('.shop-list[data-list="Amazon"] .shop-item:has-text("Paper towels") [data-act=shop-edit]');
+  await page.fill('#item-form [name=newlist]', 'Costco');
+  await page.click('#item-form [type=submit]');
+  await page.waitForSelector('.shop-list[data-list="Costco"]');
+  assert.match(await page.textContent('.shop-list[data-list="Costco"]'), /Paper towels/);
+  await page.click('.cats [data-act=shop-filter][data-list="Costco"]');
+  assert.equal(await page.locator('.shop-list').count(), 1);
+});
+
+test('shopping: adding goes to the chosen list, and back leaves the screen', async () => {
+  const { page } = await open();
+  await page.click('[data-act=shopping]');
+  await page.click('.shop-to [data-list="Amazon"]');
+  await page.fill('#shop-add input', 'HDMI cable');
+  await page.click('#shop-add [type=submit]');
+  await page.waitForFunction(() => /HDMI cable/.test(document.querySelector('.shop-list[data-list="Amazon"]').textContent));
+  await page.goBack();
+  await page.waitForSelector('section.lane.mine');
+});
