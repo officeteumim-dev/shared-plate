@@ -130,6 +130,31 @@ const TOOLS = [
     }
   },
   {
+    name: 'add_comment',
+    description: 'Comment on a task or a shopping item, for example to ask the other person for more detail ("Which brand?"). They get a notification.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        about: { type: 'string', enum: ['task', 'shopping'], description: 'Is it a task or a shopping item?' },
+        id: { type: 'string', description: 'The task id or shopping item id (from list_tasks or list_shopping).' },
+        text: { type: 'string' }
+      },
+      required: ['about', 'id', 'text'],
+      additionalProperties: false
+    }
+  },
+  {
+    name: 'get_comments',
+    description: 'Read the comments on a task or a shopping item.',
+    inputSchema: {
+      type: 'object',
+      properties: { about: { type: 'string', enum: ['task', 'shopping'] }, id: { type: 'string' } },
+      required: ['about', 'id'],
+      additionalProperties: false
+    },
+    annotations: { readOnlyHint: true }
+  },
+  {
     name: 'take_task',
     description: 'Take an unclaimed shared task, so it moves to my plate.',
     inputSchema: { type: 'object', properties: { task_id: { type: 'string' } }, required: ['task_id'], additionalProperties: false }
@@ -161,6 +186,7 @@ async function callTool(name, args, ctx) {
     if (L.repeatLabel(t.repeat)) bits.push(L.repeatLabel(t.repeat).toLowerCase());
     if (t.category) bits.push(t.category);
     if (t.status === 'done') bits.push('done');
+    if (t.commentCount) bits.push(`${t.commentCount} comment${t.commentCount === 1 ? '' : 's'}`);
     return `[${t.id}] ${t.priority ? '(' + t.priority + ') ' : ''}${t.title} — ${bits.join(', ')}${t.notes ? `\n    Note: ${String(t.notes).replace(/\n/g, ' ')}` : ''}`;
   };
   const getTask = async id => {
@@ -271,7 +297,7 @@ async function callTool(name, args, ctx) {
       const out = [];
       for (const l of lists) {
         const todo = items.filter(x => x.list === l && !x.checked), got = items.filter(x => x.list === l && x.checked);
-        out.push(`${l} (${todo.length} to get):`, ...todo.map(x => `  [${x.id}] ${x.name}${x.note ? ' — ' + x.note : ''}`));
+        out.push(`${l} (${todo.length} to get):`, ...todo.map(x => `  [${x.id}] ${x.name}${x.note ? ' — ' + x.note : ''}${x.commentCount ? ` (${x.commentCount} comment${x.commentCount === 1 ? '' : 's'}, latest: “${x.lastComment || ''}”)` : ''}`));
         if (args.include_checked && got.length) out.push(`  Checked: ${got.map(x => `[${x.id}] ${x.name}`).join(', ')}`);
       }
       return out.length ? out.join('\n') : 'The shopping list is empty.';
@@ -288,6 +314,23 @@ async function callTool(name, args, ctx) {
       await store.shopUpdate(x.id, patch);
       const m = { ...x, ...patch };
       return `${m.name}: ${m.checked ? 'checked off' : 'to get'}, on ${m.list}.`;
+    }
+
+    case 'add_comment':
+    case 'get_comments': {
+      const kind = args.about === 'shopping' ? 'shopping' : 'tasks';
+      const target = kind === 'shopping' ? await store.shopGet(String(args.id || '')) : await store.get(String(args.id || ''));
+      if (!target) throw new UserError(`There's no ${kind === 'shopping' ? 'shopping item' : 'task'} with id "${args.id}".`);
+      const label = target.name || target.title;
+      if (name === 'add_comment') {
+        const text = clean(args.text, 1000);
+        if (!text) throw new UserError('Say what to write.');
+        await store.addComment(kind, target.id, text);
+        return `Commented on ${label}: “${text}”. The others in the household were notified.`;
+      }
+      const list = await store.comments(kind, target.id);
+      if (!list.length) return `No comments on ${label} yet.`;
+      return [`Comments on ${label}:`, ...list.map(c => `  ${nameOf(c.by)}, ${fmt(c.at, tz)}: ${c.text}`)].join('\n');
     }
 
     case 'take_task': {
@@ -317,7 +360,8 @@ async function handleMessage(msg, ctx) {
         serverInfo: { name: 'shared-plate', title: 'Shared Plate', version: '1.0.0' },
         instructions: 'Shared Plate is a household task list. Every task has one owner: a person, or "shared" for whoever takes it. ' +
           'Use get_household to learn the names, today\'s date and the time zone; list_tasks to find task ids; add_task for new reminders and events. ' +
-          'There is also a shared shopping list (add_shopping_items, list_shopping, update_shopping_item).'
+          'There is also a shared shopping list (add_shopping_items, list_shopping, update_shopping_item). ' +
+          'Use add_comment to ask the other person about a task or shopping item; get_comments reads the replies.'
       });
     }
     case 'ping': return reply({});

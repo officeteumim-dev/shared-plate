@@ -25,6 +25,8 @@
   const ICON = {
     plus: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>',
     gear: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3.2"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>',
+    chat: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 12.5a7.5 7.5 0 0 1-10.9 6.7L4 20.5l1.4-4.4A7.5 7.5 0 1 1 20 12.5z"/></svg>',
+    send: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h13M13 6l6 6-6 6"/></svg>',
     cart: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 4h2.2l2.3 11.2a1.6 1.6 0 0 0 1.6 1.3h8.1a1.6 1.6 0 0 0 1.6-1.2L20.5 8H6.1"/><circle cx="9.5" cy="20" r="1.3"/><circle cx="17" cy="20" r="1.3"/></svg>',
     cal: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="5" width="17" height="15.5" rx="2.5"/><path d="M3.5 10h17M8 3v4M16 3v4"/></svg>',
     next: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg>',
@@ -149,6 +151,11 @@
       ['s4', { name: 'Phone charger', list: 'Amazon', checked: false, addedBy: me, createdAt: t0 - 26 * H }],
       ['s5', { name: 'Paper towels', list: 'Amazon', checked: false, addedBy: her, createdAt: t0 - 4 * H }]
     ]);
+    const comments = new Map(); // 'shopping/s1' → [{ id, text, by, at }]
+    comments.set('shopping/s4', [{ id: 'c1', text: 'Which one? USB-C or Lightning?', by: her, at: t0 - 50 * 60000 }]);
+    shop.set('s4', { ...shop.get('s4'), commentCount: 1, lastComment: 'Which one? USB-C or Lightning?', lastCommentBy: her, lastCommentAt: t0 - 50 * 60000, seenBy: {} });
+    let onThread = null, threadKey = null;
+    const emitThread = () => { if (onThread) { const l = (comments.get(threadKey) || []).slice(); setTimeout(() => onThread && onThread(l)); } };
     const emitShop = () => { const all = [...shop].map(([id, x]) => ({ id, ...x })); setTimeout(() => onShop(all)); };
     let profile = { displayName: 'Avi', email: 'avi@example.com', groupIds: ['demo'], quiet: { enabled: true, start: '22:00', end: '07:00' }, prefs: {}, tz: 'America/New_York' };
     const resolve = d => { const o = { ...d }; for (const k in o) if (o[k] === 'NOW') o[k] = now(); return o; };
@@ -176,6 +183,21 @@
       setItem(gid, id, data) { shop.set(id, resolve(data)); emitShop(); return Promise.resolve(id); },
       updateItem(gid, id, patch) { shop.set(id, { ...shop.get(id), ...resolve(patch) }); emitShop(); return Promise.resolve(); },
       deleteItem(gid, id) { shop.delete(id); emitShop(); return Promise.resolve(); },
+      watchComments(gid, kind, id, cb) { onThread = cb; threadKey = `${kind}/${id}`; emitThread(); return () => { onThread = null; }; },
+      addComment(gid, kind, id, text) {
+        const key = `${kind}/${id}`, list = comments.get(key) || [];
+        list.push({ id: 'c' + (++seq), text, by: me, at: now() }); comments.set(key, list);
+        const store = kind === 'shopping' ? shop : tasks, x = store.get(id);
+        store.set(id, { ...x, commentCount: (x.commentCount || 0) + 1, lastComment: text.slice(0, 200), lastCommentBy: me, lastCommentAt: now(), seenBy: { ...(x.seenBy || {}), [me]: now() } });
+        if (kind === 'shopping') emitShop(); else emit();
+        emitThread(); return Promise.resolve();
+      },
+      markSeen(gid, kind, id) {
+        const store = kind === 'shopping' ? shop : tasks, x = store.get(id); if (!x) return Promise.resolve();
+        store.set(id, { ...x, seenBy: { ...(x.seenBy || {}), [me]: now() } });
+        if (kind === 'shopping') emitShop(); else emit();
+        return Promise.resolve();
+      },
       newId() { return 'n' + (++seq); },
       setTask(gid, id, data) { tasks.set(id, resolve(data)); emit(); return Promise.resolve(id); },
       updateTask(gid, id, patch) { tasks.set(id, { ...tasks.get(id), ...resolve(patch) }); emit(); return Promise.resolve(); },
@@ -244,6 +266,29 @@
         batch.set(db.doc(`users/${uid}`), { groupIds: FV.arrayUnion(ref.id), updatedAt: FV.serverTimestamp() }, { merge: true });
         await batch.commit();
         return ref.id;
+      },
+      // Comments: groups/<gid>/<kind>/<id>/comments. Posting one also updates the summary on the item and
+      // asks the server to notify the others (skipped if offline; the comment still syncs).
+      watchComments(gid, kind, id, cb) {
+        return db.collection(`groups/${gid}/${kind}/${id}/comments`).orderBy('at').limit(200)
+          .onSnapshot(q => cb(q.docs.map(d => ({ id: d.id, ...snapData(d) }))), e => fail(e, 'load the comments'));
+      },
+      addComment(gid, kind, id, text) {
+        const ref = db.collection(`groups/${gid}/${kind}/${id}/comments`).doc();
+        const batch = db.batch();
+        batch.set(ref, { text, by: uid, at: FV.serverTimestamp() });
+        batch.update(db.doc(`groups/${gid}/${kind}/${id}`), {
+          commentCount: FV.increment(1), lastComment: text.slice(0, 200), lastCommentBy: uid, lastCommentAt: FV.serverTimestamp(),
+          [`seenBy.${uid}`]: Date.now()
+        });
+        const done = batch.commit();
+        done.then(() => firebase.app().functions('us-central1').httpsCallable('notifyComment')({ groupId: gid, kind, itemId: id, commentId: ref.id }))
+          .catch(e => console.warn('comment notify', e));
+        done.catch(e => fail(e, 'send that'));
+        return Promise.resolve(ref.id);
+      },
+      markSeen(gid, kind, id) {
+        return db.doc(`groups/${gid}/${kind}/${id}`).update({ [`seenBy.${uid}`]: Date.now() }).catch(() => {});
       },
       async joinGroup(code, name) {
         const r = await firebase.app().functions('us-central1').httpsCallable('joinGroup')({ code, name });
@@ -412,7 +457,7 @@
     S.unsub.push(B.watchTasks(gid, list => { S.open = list; S.loaded = true; render(); openDeepLink();
       if (S.pendingImport) { const c = S.pendingImport; S.pendingImport = null; openImport(c); } }, list => { S.done = list; if (S.view === 'done' || S.view === 'calendar') render(); }, lost));
     S.shop = [];
-    S.unsub.push(B.watchShopping(gid, items => { S.shop = items; if (S.view === 'shopping') renderShopping(); else if (S.view === 'home') render(); }, () => {}));
+    S.unsub.push(B.watchShopping(gid, items => { S.shop = items; if (S.view === 'shopping') renderShopping(); else if (S.view === 'home') render(); if (/shop=/.test(location.hash)) openDeepLink(); }, () => {}));
     refreshPushToken();
   }
 
@@ -527,7 +572,7 @@
         <h1>${esc(S.group.name || 'Shared Plate')}</h1>
         <div style="display:flex;gap:8px;align-items:center">
           ${PREVIEW ? '<span class="preview-flag">Preview</span>' : ''}
-          <button class="icon-btn shop-btn" data-act="shopping" aria-label="Shopping list${shopCount() ? `, ${shopCount()} to get` : ''}">${ICON.cart}${shopCount() ? `<span class="badge">${shopCount() > 99 ? '99+' : shopCount()}</span>` : ''}</button>
+          <button class="icon-btn shop-btn" data-act="shopping" aria-label="Shopping list${shopCount() ? `, ${shopCount()} to get` : ''}">${ICON.cart}${shopCount() ? `<span class="badge">${shopCount() > 99 ? '99+' : shopCount()}</span>` : ''}${shopUnread() ? '<span class="new-dot" aria-label="new comments"></span>' : ''}</button>
           <button class="icon-btn" data-act="calendar" aria-label="Calendar">${ICON.cal}</button>
           <button class="icon-btn" data-act="settings" aria-label="Settings">${ICON.gear}</button>
         </div>
@@ -617,6 +662,7 @@
     if (x.owner === 'shared' && x.claimedBy) meta.push(`<span class="tag">${x.claimedBy === S.uid ? 'Shared, you took it' : `Shared, ${esc(nameOf(x.claimedBy))} took it`}</span>`);
     else if (k === 'theirs' && others().length > 1) meta.push(`<span class="tag">${esc(nameOf(L.responsible(x)))}</span>`);
     if (x.notes) meta.push('Note');
+    if (x.commentCount) meta.push(`<span class="${unread(x) ? 'new-comment' : ''}">${unread(x) ? 'New comment' : `${x.commentCount} comment${x.commentCount === 1 ? '' : 's'}`}</span>`);
     if (x.category && (snoozed || S.view === 'calendar')) meta.push(`<span class="tag">${esc(x.category)}</span>`);
     const unclaimed = x.owner === 'shared' && !x.claimedBy && !snoozed;
     const nudge = unclaimed && L.needsNudge(x, t, C.nudgeAfterHours || 24);
@@ -793,6 +839,9 @@
   // One shared list, split into lists like Groceries and Amazon. Tap to check off; tap the name to move or edit.
   const DEFAULT_LISTS = ['Groceries', 'Amazon'];
   const shopCount = () => (S.shop || []).filter(x => !x.checked).length;
+  // A comment from someone else that I haven't opened yet.
+  const unread = x => !!x && !!x.lastCommentBy && x.lastCommentBy !== S.uid && (L.toMs(x.lastCommentAt) || 0) > ((x.seenBy || {})[S.uid] || 0);
+  const shopUnread = () => (S.shop || []).some(unread);
   function shopLists() {
     const used = [...new Set((S.shop || []).map(x => String(x.list || '').trim()).filter(Boolean))];
     const out = [...DEFAULT_LISTS];
@@ -807,7 +856,8 @@
       <button class="shop-check" data-act="shop-toggle" data-id="${esc(x.id)}" role="checkbox" aria-checked="${!!x.checked}" aria-label="${x.checked ? 'Uncheck' : 'Check off'} ${esc(x.name)}"><span></span></button>
       <button class="shop-body" data-act="shop-edit" data-id="${esc(x.id)}">
         <span class="shop-name">${esc(x.name)}</span>${sub ? `<span class="shop-note">${esc(sub)}</span>` : ''}
-      </button></li>`;
+      </button>
+      <button class="chat-btn${unread(x) ? ' unread' : ''}" data-act="shop-chat" data-id="${esc(x.id)}" aria-label="${x.commentCount ? `${x.commentCount} comment${x.commentCount === 1 ? '' : 's'}${unread(x) ? ', new' : ''} on` : 'Ask about'} ${esc(x.name)}">${ICON.chat}${x.commentCount ? `<span class="n">${x.commentCount}</span>` : ''}</button></li>`;
   }
   function renderShopping() {
     S.view = 'shopping';
@@ -885,6 +935,52 @@
         toast(moved ? `Moved to ${list}.` : 'Saved.');
       };
     });
+  }
+
+  // ---------- Comment threads ----------
+  const QUICK = {
+    shopping: ['Which brand?', 'How many?', 'What size?', 'Do we still need this?'],
+    tasks: ['Any more details?', 'When does this need to be done?', 'Can you take this one?', 'Is this done?']
+  };
+  function threadHtml(kind) {
+    return `<section class="thread" aria-label="Comments">
+      <ol class="msgs" id="msgs"><li class="muted small">Loading…</li></ol>
+      <div class="quick">${QUICK[kind].map(q => `<button type="button" class="cat-chip small" data-quick="${esc(q)}">${esc(q)}</button>`).join('')}</div>
+      <form class="say" id="say" autocomplete="off">
+        <textarea name="text" rows="1" maxlength="1000" placeholder="${others().length ? `Message ${esc(others().map(o => S.group.names?.[o] || 'them').join(', '))}` : 'Add a comment'}" aria-label="Comment"></textarea>
+        <button class="btn" type="submit" aria-label="Send">${ICON.send}</button>
+      </form></section>`;
+  }
+  function bindThread(sheet, kind, id) {
+    const box = sheet.querySelector('#msgs'), form = sheet.querySelector('#say');
+    const draw = list => {
+      box.innerHTML = list.length ? list.map(c => {
+        const mine = c.by === S.uid, at = L.toMs(c.at);
+        return `<li class="msg${mine ? ' mine' : ''}"><div class="bubble">${esc(c.text)}</div>
+          <div class="when">${mine ? 'You' : esc(nameOf(c.by))}${at ? `, ${esc(L.fmtWhen(at, now()))}` : ''}</div></li>`;
+      }).join('') : '<li class="muted small">No comments yet. Ask a question and they’ll get a notification.</li>';
+      box.scrollTop = box.scrollHeight;
+    };
+    S.threadUnsub = B.watchComments(S.gid, kind, id, draw);
+    B.markSeen(S.gid, kind, id);
+    const send = text => {
+      text = String(text || '').trim().slice(0, 1000);
+      if (!text) return;
+      B.addComment(S.gid, kind, id, text);
+      form.text.value = ''; form.text.style.height = '';
+    };
+    form.onsubmit = e => { e.preventDefault(); send(form.text.value); };
+    form.text.addEventListener('keydown', e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(form.text.value); } });
+    form.text.addEventListener('input', () => { form.text.style.height = 'auto'; form.text.style.height = Math.min(140, form.text.scrollHeight) + 'px'; });
+    sheet.querySelector('.quick').onclick = e => { const b = e.target.closest('[data-quick]'); if (b) send(b.dataset.quick); };
+  }
+  function openShopChat(id) {
+    const x = (S.shop || []).find(i => i.id === id);
+    if (!x) return;
+    openSheet(`<div class="stack">
+      <div class="chat-head"><h2>${esc(x.name)}</h2><span class="muted small">${esc(x.list)}${x.note ? `, ${esc(x.note)}` : ''}</span></div>
+      ${threadHtml('shopping')}
+      <button class="link" data-act="shop-edit" data-id="${esc(x.id)}">Edit or move this item</button></div>`, sheet => bindThread(sheet, 'shopping', id));
   }
 
   // =====================================================================
@@ -1059,6 +1155,7 @@
 
   function openSheet(html, onOpen) {
     const wasOpen = !!sheetRoot.innerHTML;
+    if (S.threadUnsub) { S.threadUnsub(); S.threadUnsub = null; }
     sheetRoot.innerHTML = `<div class="scrim" data-act="close"></div><div class="sheet" role="dialog" aria-modal="true"><div class="grab" aria-hidden="true"></div>${html}</div>`;
     document.body.style.overflow = 'hidden';
     if (!wasOpen) pushNav('sheet');
@@ -1066,6 +1163,7 @@
     onOpen && onOpen(sheetRoot.querySelector('.sheet'));
   }
   function closeSheet(fromHistory) {
+    if (S.threadUnsub) { S.threadUnsub(); S.threadUnsub = null; }
     if (!sheetRoot.innerHTML) return;
     sheetRoot.innerHTML = ''; document.body.style.overflow = '';
     if (!fromHistory) popNav('sheet');
@@ -1182,7 +1280,9 @@
             <label class="field" style="flex:1 1 100%"><span>Or pick a date (it comes back at 8am)</span><input type="date" id="snooze-date" min="${dateStr(t + DAYMS)}"></label>
           </div>
           <button type="button" class="btn danger" data-act="delete">Delete task</button>` : ''}
-      </div></form>`, sheet => {
+      </div></form>
+      ${x ? `<h3 class="thread-title">Comments</h3>${threadHtml('tasks')}` : ''}`, sheet => {
+      if (x) bindThread(sheet, 'tasks', x.id);
       const form = sheet.querySelector('#task-form');
       if (!x) setTimeout(() => form.title.focus(), 60);
       sheet.querySelector('#owner-seg').onclick = e => {
@@ -1295,6 +1395,7 @@
         <p class="muted small">Reminders that land in quiet hours arrive when they end. This is just for you.</p>
         <label class="toggle"><span>When a task is due</span><input type="checkbox" id="p-due" ${p.due !== false ? 'checked' : ''}></label>
         <label class="toggle"><span>When a snoozed task comes back</span><input type="checkbox" id="p-back" ${p.back !== false ? 'checked' : ''}></label>
+        <label class="toggle"><span>When someone comments</span><input type="checkbox" id="p-comments" ${p.comments !== false ? 'checked' : ''}></label>
       </section>
       <section class="settings-section" id="calendar-settings"><h3>Calendar</h3>
         ${Hb && Hb.supported ? `<label class="toggle"><span>Show Hebrew dates and holidays</span><input type="checkbox" id="p-hebrew" ${hebOn() ? 'checked' : ''}></label>
@@ -1338,9 +1439,9 @@
     </div>`, sheet => {
       const saveQuiet = () => B.saveProfile({
         quiet: { enabled: sheet.querySelector('#q-on').checked, start: sheet.querySelector('#q-start').value || '22:00', end: sheet.querySelector('#q-end').value || '07:00' },
-        prefs: { due: sheet.querySelector('#p-due').checked, back: sheet.querySelector('#p-back').checked }
+        prefs: { due: sheet.querySelector('#p-due').checked, back: sheet.querySelector('#p-back').checked, comments: sheet.querySelector('#p-comments').checked }
       }).catch(e => fail(e, 'save quiet hours'));
-      ['#q-on', '#q-start', '#q-end', '#p-due', '#p-back'].forEach(s => sheet.querySelector(s).addEventListener('change', saveQuiet));
+      ['#q-on', '#q-start', '#q-end', '#p-due', '#p-back', '#p-comments'].forEach(s => sheet.querySelector(s).addEventListener('change', saveQuiet));
       [['#p-hebrew', 'hebrew'], ['#p-parsha', 'parsha'], ['#p-daf', 'daf']].forEach(([sel, key]) => sheet.querySelector(sel)?.addEventListener('change', e => {
         S.profile.prefs = { ...(S.profile.prefs || {}), [key]: e.target.checked };
         B.saveProfile({ prefs: { [key]: e.target.checked } }).catch(er => fail(er, 'save that setting'));
@@ -1547,6 +1648,15 @@
 
   // ---------- Deep links from notifications: #task=groupId/taskId ----------
   function openDeepLink() {
+    const sm = /shop=([^&]+)/.exec(location.hash);
+    if (sm) {
+      const [gid, iid] = decodeURIComponent(sm[1]).split('/');
+      if (gid !== S.gid) { if ((S.profile.groupIds || []).includes(gid)) startGroup(gid); return; }
+      if (!(S.shop || []).some(i => i.id === iid)) return; // wait for the list to load
+      history.replaceState(null, '', location.pathname + location.search);
+      if (S.view !== 'shopping') openView('shopping', renderShopping);
+      return openShopChat(iid);
+    }
     const m = /task=([^&]+)/.exec(location.hash);
     if (!m) return;
     const [gid, tid] = decodeURIComponent(m[1]).split('/');
@@ -1603,6 +1713,7 @@
         return B.updateItem(S.gid, id, x.checked ? { checked: false, checkedBy: null, checkedAt: null } : { checked: true, checkedBy: S.uid, checkedAt: 'NOW' });
       }
       case 'shop-edit': return openShopItem(id);
+      case 'shop-chat': return openShopChat(id);
       case 'shop-to': S.shopList = el.dataset.list; try { localStorage.setItem('sp_shoplist', S.shopList); } catch (er) {} renderShopping(); return $('#shop-add input')?.focus();
       case 'shop-filter': S.shopFilter = el.dataset.list; return renderShopping();
       case 'shop-newlist': {

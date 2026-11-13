@@ -21,6 +21,9 @@ function household(uid = 'avi') {
     async shopAdd(d) { const id = 's' + (shop.size + 1); shop.set(id, { ...d }); return id; },
     async shopUpdate(id, p) { shop.set(id, { ...shop.get(id), ...p }); },
     async shopDelete(id) { shop.delete(id); },
+    async comments(kind, id) { return this._c.get(kind + '/' + id) || []; },
+    _c: new Map(),
+    async addComment(kind, id, text) { const k = kind + '/' + id; this._c.set(k, [...(this._c.get(k) || []), { text, by: uid, at: NOW }]); },
     async list() { return [...tasks].map(([id, t]) => ({ id, ...t })); },
     async get(id) { return tasks.has(id) ? { id, ...tasks.get(id) } : null; },
     async add(d) { const id = 'n' + (++n); tasks.set(id, { ...d }); return id; },
@@ -41,7 +44,7 @@ test('the handshake and the tool list', async () => {
   assert.ok(init.result.capabilities.tools);
   assert.equal(await mcp.handleMessage({ jsonrpc: '2.0', method: 'notifications/initialized' }, ctx), null);
   const list = await mcp.handleMessage({ jsonrpc: '2.0', id: 2, method: 'tools/list' }, ctx);
-  assert.deepEqual(list.result.tools.map(t => t.name), ['get_household', 'list_tasks', 'add_task', 'update_task', 'complete_task', 'add_shopping_items', 'list_shopping', 'update_shopping_item', 'take_task']);
+  assert.deepEqual(list.result.tools.map(t => t.name), ['get_household', 'list_tasks', 'add_task', 'update_task', 'complete_task', 'add_shopping_items', 'list_shopping', 'update_shopping_item', 'add_comment', 'get_comments', 'take_task']);
   const unknown = await mcp.handleMessage({ jsonrpc: '2.0', id: 3, method: 'resources/list' }, ctx);
   assert.equal(unknown.error.code, -32601);
 });
@@ -125,4 +128,14 @@ test('shopping: add (skipping ones already there), list, check off, move and rem
   assert.match((await call(ctx, 'update_shopping_item', { item_id: 's3', remove: true })).text, /Removed bread/);
   assert.equal(shop.has('s3'), false);
   assert.match((await call(ctx, 'update_shopping_item', { item_id: 'zz' })).text, /no shopping item/);
+});
+
+
+test('comments from Claude: ask about a shopping item or a task, and read the replies', async () => {
+  const { ctx } = household();
+  assert.match((await call(ctx, 'add_comment', { about: 'shopping', id: 's1', text: 'Which brand?' })).text, /Commented on Milk: “Which brand\?”/);
+  assert.match((await call(ctx, 'add_comment', { about: 'task', id: 't3', text: 'Is the insurance card in the car?' })).text, /Renew registration/);
+  assert.match((await call(ctx, 'get_comments', { about: 'shopping', id: 's1' })).text, /Avi \(me\), .*: Which brand\?/);
+  assert.match((await call(ctx, 'get_comments', { about: 'task', id: 't1' })).text, /No comments on Call the plumber yet/);
+  assert.match((await call(ctx, 'add_comment', { about: 'shopping', id: 'nope', text: 'x' })).text, /no shopping item/);
 });

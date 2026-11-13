@@ -531,3 +531,37 @@ test('shopping: adding goes to the chosen list, and back leaves the screen', asy
   await page.goBack();
   await page.waitForSelector('section.lane.mine');
 });
+
+test('comments on a shopping item: unread dot, read the thread, ask with a quick question', async () => {
+  const { page, errors } = await open();
+  assert.equal(await page.locator('[data-act=shopping] .new-dot').count(), 1, 'the cart shows there is a new comment');
+  await page.click('[data-act=shopping]');
+  const btn = page.locator('.shop-item:has-text("Phone charger") [data-act=shop-chat]');
+  assert.match(await btn.getAttribute('class'), /unread/);
+  await btn.click();
+  await page.waitForFunction(() => /USB-C or Lightning/.test(document.querySelector('#msgs')?.textContent || ''));
+  assert.match(await page.textContent('#msgs'), /Leah/);
+  await page.click('.quick [data-quick="How many?"]');
+  await page.waitForFunction(() => document.querySelectorAll('#msgs .msg.mine').length === 1);
+  await page.fill('#say textarea', 'USB-C, two of them');
+  await page.press('#say textarea', 'Enter');
+  await page.waitForFunction(() => document.querySelectorAll('#msgs .msg.mine').length === 2);
+  await page.click('.sheet [data-act=shop-edit]');
+  await page.waitForSelector('#item-form');
+  await page.goBack();
+  await page.waitForFunction(() => !document.querySelector('.sheet'));
+  assert.doesNotMatch(await page.locator('.shop-item:has-text("Phone charger") [data-act=shop-chat]').getAttribute('class'), /unread/, 'seen now');
+  assert.match(await page.textContent('.shop-item:has-text("Phone charger") [data-act=shop-chat] .n'), /^3$/);
+  assert.deepEqual(errors, []);
+});
+
+test('comments on a task live in its edit sheet and show on the row', async () => {
+  const { page } = await open();
+  await page.click('section.lane.mine > ul .row-wrap:has-text("Renew car registration") [data-act=edit]');
+  assert.match(await page.textContent('.sheet .thread-title'), /Comments/);
+  await page.fill('#say textarea', 'Do we have the insurance card?');
+  await page.click('#say [type=submit]');
+  await page.waitForFunction(() => document.querySelectorAll('#msgs .msg.mine').length === 1);
+  await page.keyboard.press('Escape');
+  assert.match(await page.textContent('section.lane.mine > ul .row-wrap:has-text("Renew car registration") .meta'), /1 comment/);
+});

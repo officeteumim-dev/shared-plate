@@ -28,6 +28,20 @@ service cloud.firestore {
     function str(v, max) { return v is string && v.size() > 0 && v.size() <= max; }
     function optStr(d, k, max) { return !(k in d) || (d[k] is string && d[k].size() <= max); }
     function optTime(d, k) { return !(k in d) || d[k] == null || d[k] is timestamp; }
+    // Comment summary kept on a task or shopping item: how many, the latest, and when each person last looked.
+    function validCommentSummary(d) {
+      return (!('commentCount' in d) || d.commentCount is int)
+        && optStr(d, 'lastComment', 200)
+        && optTime(d, 'lastCommentAt')
+        && (!('seenBy' in d) || d.seenBy is map);
+    }
+    // A comment: text, by (who wrote it), at (server time). Nobody can edit someone else's.
+    function validComment(g) {
+      return request.resource.data.keys().hasOnly(['text', 'by', 'at'])
+        && str(request.resource.data.text, 1000)
+        && request.resource.data.by == me()
+        && request.resource.data.at == request.time;
+    }
 
     // ---------- Groups ----------
     // groups/{g}: name, createdBy, createdAt, members (uid → 'owner' | 'member'), names (uid → display name), inviteCode,
@@ -81,7 +95,9 @@ service cloud.firestore {
       match /shopping/{i} {
         function validItem(d) {
           let members = groupData(g).members;
-          return d.keys().hasOnly(['name', 'list', 'note', 'checked', 'checkedBy', 'checkedAt', 'addedBy', 'createdAt', 'order'])
+          return d.keys().hasOnly(['name', 'list', 'note', 'checked', 'checkedBy', 'checkedAt', 'addedBy', 'createdAt', 'order',
+              'commentCount', 'lastComment', 'lastCommentBy', 'lastCommentAt', 'seenBy'])
+            && validCommentSummary(d)
             && str(d.name, 120) && str(d.list, 40) && optStr(d, 'note', 200)
             && d.checked is bool
             && (d.get('checkedBy', null) == null || d.checkedBy in members)
@@ -93,6 +109,11 @@ service cloud.firestore {
         allow create: if isMember(g) && validItem(request.resource.data);
         allow update: if isMember(g) && validItem(request.resource.data) && unchanged(['addedBy', 'createdAt']);
         allow delete: if isMember(g);
+        match /comments/{c} {
+          allow read: if isMember(g);
+          allow create: if isMember(g) && validComment(g);
+          allow delete: if isMember(g) && resource.data.by == me();
+        }
       }
 
       // ---------- Tasks ----------
@@ -101,7 +122,9 @@ service cloud.firestore {
           let members = groupData(g).members;
           return d.keys().hasOnly(['title', 'notes', 'owner', 'claimedBy', 'claimedAt', 'status', 'dueAt', 'showAgainOn',
               'repeat', 'createdBy', 'createdAt', 'updatedAt', 'completedAt', 'completedBy', 'notifyAt', 'notifyOnly',
-              'notifyKind', 'nextId', 'repeatOf', 'category', 'priority', 'order'])
+              'notifyKind', 'nextId', 'repeatOf', 'category', 'priority', 'order',
+              'commentCount', 'lastComment', 'lastCommentBy', 'lastCommentAt', 'seenBy'])
+            && validCommentSummary(d)
             && str(d.title, 200)
             && optStr(d, 'notes', 2000)
             && d.status in ['open', 'snoozed', 'done']
@@ -126,6 +149,11 @@ service cloud.firestore {
           && validTask(request.resource.data)
           && unchanged(['createdBy', 'createdAt']);
         allow delete: if isMember(g);
+        match /comments/{c} {
+          allow read: if isMember(g);
+          allow create: if isMember(g) && validComment(g);
+          allow delete: if isMember(g) && resource.data.by == me();
+        }
       }
     }
 
