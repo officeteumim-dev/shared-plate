@@ -383,3 +383,31 @@ section.lane .list + .cat-head { margin-top: 14px; }
 .wk-add svg { width: 20px; height: 20px; }
 .wk-day .list { margin: 6px 0 2px; gap: 6px; }
 .wk-day .task.cal-task { background: var(--bg); min-height: 52px; }
+
+/* ---------- Shopping list ---------- */
+.shop-btn { position: relative; }
+.shop-btn .badge { position: absolute; top: 2px; right: 0; min-width: 18px; height: 18px; padding: 0 5px; border-radius: 9px; background: var(--shared); color: #fff; font-size: 11px; font-weight: 700; display: grid; place-items: center; line-height: 1; }
+.shop-add { display: grid; grid-template-columns: 1fr auto; gap: 8px; margin: 6px 0 10px; }
+.shop-add input { font-size: 17px; }
+.shop-add .btn { width: 52px; padding: 0; }
+.shop-add .btn svg { width: 24px; height: 24px; }
+.shop-to { display: flex; flex-wrap: wrap; gap: 6px; }
+.shop-tip { margin: 8px 2px 14px; }
+.shop-lists { display: grid; gap: 14px; }
+.shop-list { background: var(--surface); border-radius: 22px; padding: 12px 10px 10px; }
+.shop-head { display: flex; align-items: center; gap: 10px; margin: 0 4px 8px; }
+.shop-head h3 { font-size: 19px; }
+.shop-head .count { margin-left: auto; font-family: var(--display); font-size: 15px; font-weight: 700; min-width: 26px; height: 26px; padding: 0 8px; border-radius: 13px; display: inline-grid; place-items: center; background: var(--ink); color: var(--bg); }
+.shop-items { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; }
+.shop-item { display: grid; grid-template-columns: 48px 1fr; align-items: center; min-height: 52px; border-radius: 12px; }
+.shop-check { width: 48px; height: 48px; border: 0; background: none; display: grid; place-items: center; }
+.shop-check span { width: 24px; height: 24px; border-radius: 7px; border: 2.5px solid var(--ink-2); display: grid; place-items: center; }
+.shop-item.checked .shop-check span { background: var(--mine); border-color: var(--mine); }
+.shop-item.checked .shop-check span::after { content: ""; width: 6px; height: 11px; border: solid #fff; border-width: 0 2.5px 2.5px 0; transform: rotate(45deg) translate(-1px, -1px); }
+.shop-body { min-height: 48px; border: 0; background: none; text-align: left; display: flex; flex-direction: column; justify-content: center; padding: 4px 6px 4px 0; }
+.shop-name { font-weight: 700; font-size: 17px; overflow-wrap: anywhere; }
+.shop-note { font-size: 14px; color: var(--ink-2); }
+.shop-item.checked .shop-name { text-decoration: line-through; color: var(--ink-2); font-weight: 400; }
+.shop-list .drawer { --k: var(--ink-2); background: var(--bg); }
+.clear-got { margin: 0 12px 6px; }
+.shop-move { display: flex; flex-wrap: wrap; gap: 6px; }

@@ -25,6 +25,7 @@
   const ICON = {
     plus: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>',
     gear: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3.2"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>',
+    cart: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 4h2.2l2.3 11.2a1.6 1.6 0 0 0 1.6 1.3h8.1a1.6 1.6 0 0 0 1.6-1.2L20.5 8H6.1"/><circle cx="9.5" cy="20" r="1.3"/><circle cx="17" cy="20" r="1.3"/></svg>',
     cal: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="5" width="17" height="15.5" rx="2.5"/><path d="M3.5 10h17M8 3v4M16 3v4"/></svg>',
     next: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg>',
     grip: '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="9" cy="6" r="1.7"/><circle cx="15" cy="6" r="1.7"/><circle cx="9" cy="12" r="1.7"/><circle cx="15" cy="12" r="1.7"/><circle cx="9" cy="18" r="1.7"/><circle cx="15" cy="18" r="1.7"/></svg>',
@@ -115,7 +116,7 @@
   // =====================================================================
   // Backends
   // =====================================================================
-  const TIME_KEYS = ['dueAt', 'showAgainOn', 'completedAt', 'createdAt', 'updatedAt', 'notifyAt', 'claimedAt'];
+  const TIME_KEYS = ['dueAt', 'showAgainOn', 'completedAt', 'createdAt', 'updatedAt', 'notifyAt', 'claimedAt', 'checkedAt'];
 
   function previewBackend() {
     const me = 'me', her = 'leah', t0 = now();
@@ -140,7 +141,15 @@
       ['p8', { ...base, title: 'Book the summer camp', owner: her, status: 'snoozed', showAgainOn: at(3, 8), createdBy: her }],
       ['p9', { ...base, title: 'Water the plants', owner: me, status: 'done', completedAt: t0 - 3 * H, completedBy: me }]
     ]);
-    let onOpen = () => {}, onDone = () => {}, onGroup = () => {}, onProfile = () => {};
+    let onOpen = () => {}, onDone = () => {}, onGroup = () => {}, onProfile = () => {}, onShop = () => {};
+    const shop = new Map([
+      ['s1', { name: 'Milk', list: 'Groceries', note: '2 gallons', checked: false, addedBy: her, createdAt: t0 - 3 * H }],
+      ['s2', { name: 'Challah flour', list: 'Groceries', checked: false, addedBy: me, createdAt: t0 - 2 * H }],
+      ['s3', { name: 'Eggs', list: 'Groceries', checked: true, checkedBy: her, checkedAt: t0 - H, addedBy: me, createdAt: t0 - 5 * H }],
+      ['s4', { name: 'Phone charger', list: 'Amazon', checked: false, addedBy: me, createdAt: t0 - 26 * H }],
+      ['s5', { name: 'Paper towels', list: 'Amazon', checked: false, addedBy: her, createdAt: t0 - 4 * H }]
+    ]);
+    const emitShop = () => { const all = [...shop].map(([id, x]) => ({ id, ...x })); setTimeout(() => onShop(all)); };
     let profile = { displayName: 'Avi', email: 'avi@example.com', groupIds: ['demo'], quiet: { enabled: true, start: '22:00', end: '07:00' }, prefs: {}, tz: 'America/New_York' };
     const resolve = d => { const o = { ...d }; for (const k in o) if (o[k] === 'NOW') o[k] = now(); return o; };
     const emit = () => {
@@ -163,6 +172,10 @@
         onGroup({ id: gid, ...group }); return Promise.resolve();
       },
       watchTasks(gid, a, b) { onOpen = a; onDone = b; emit(); return () => {}; },
+      watchShopping(gid, cb) { onShop = cb; emitShop(); return () => {}; },
+      setItem(gid, id, data) { shop.set(id, resolve(data)); emitShop(); return Promise.resolve(id); },
+      updateItem(gid, id, patch) { shop.set(id, { ...shop.get(id), ...resolve(patch) }); emitShop(); return Promise.resolve(); },
+      deleteItem(gid, id) { shop.delete(id); emitShop(); return Promise.resolve(); },
       newId() { return 'n' + (++seq); },
       setTask(gid, id, data) { tasks.set(id, resolve(data)); emit(); return Promise.resolve(id); },
       updateTask(gid, id, patch) { tasks.set(id, { ...tasks.get(id), ...resolve(patch) }); emit(); return Promise.resolve(); },
@@ -212,6 +225,14 @@
         return () => { a(); b(); };
       },
       newId(gid) { return tasksCol(gid).doc().id; },
+      // Shopping list: groups/<gid>/shopping/<item>, shared by the household.
+      watchShopping(gid, cb, onErr) {
+        return db.collection('groups').doc(gid).collection('shopping').onSnapshot(q => cb(q.docs.map(d => ({ id: d.id, ...snapData(d) }))), onErr);
+      },
+      newItemId(gid) { return db.collection('groups').doc(gid).collection('shopping').doc().id; },
+      setItem(gid, id, data) { db.collection('groups').doc(gid).collection('shopping').doc(id).set(toFs(data)).catch(e => fail(e, 'save that')); return Promise.resolve(id); },
+      updateItem(gid, id, patch) { db.collection('groups').doc(gid).collection('shopping').doc(id).update(toFs(patch)).catch(e => fail(e, 'save that')); return Promise.resolve(); },
+      deleteItem(gid, id) { db.collection('groups').doc(gid).collection('shopping').doc(id).delete().catch(e => fail(e, 'delete that')); return Promise.resolve(); },
       // Writes go to the offline cache right away; we don't wait for the server so the app feels instant offline.
       setTask(gid, id, data) { tasksCol(gid).doc(id).set(toFs(data)).catch(e => fail(e, 'save that')); return Promise.resolve(id); },
       updateTask(gid, id, patch) { tasksCol(gid).doc(id).update(toFs(patch)).catch(e => fail(e, 'save that')); return Promise.resolve(); },
@@ -390,6 +411,8 @@
     }, lost));
     S.unsub.push(B.watchTasks(gid, list => { S.open = list; S.loaded = true; render(); openDeepLink();
       if (S.pendingImport) { const c = S.pendingImport; S.pendingImport = null; openImport(c); } }, list => { S.done = list; if (S.view === 'done' || S.view === 'calendar') render(); }, lost));
+    S.shop = [];
+    S.unsub.push(B.watchShopping(gid, items => { S.shop = items; if (S.view === 'shopping') renderShopping(); else if (S.view === 'home') render(); }, () => {}));
     refreshPushToken();
   }
 
@@ -484,6 +507,7 @@
   function render() {
     if (!S.group) return;
     if (S.view === 'done') return renderDone();
+    if (S.view === 'shopping') return renderShopping();
     if (S.view === 'calendar') return renderCalendar();
     S.view = 'home';
     const t = now();
@@ -503,6 +527,7 @@
         <h1>${esc(S.group.name || 'Shared Plate')}</h1>
         <div style="display:flex;gap:8px;align-items:center">
           ${PREVIEW ? '<span class="preview-flag">Preview</span>' : ''}
+          <button class="icon-btn shop-btn" data-act="shopping" aria-label="Shopping list${shopCount() ? `, ${shopCount()} to get` : ''}">${ICON.cart}${shopCount() ? `<span class="badge">${shopCount() > 99 ? '99+' : shopCount()}</span>` : ''}</button>
           <button class="icon-btn" data-act="calendar" aria-label="Calendar">${ICON.cal}</button>
           <button class="icon-btn" data-act="settings" aria-label="Settings">${ICON.gear}</button>
         </div>
@@ -764,6 +789,104 @@
       <button class="fab" data-act="add-on-day" aria-label="Add a task on ${esc(selName)}">${ICON.plus}<span>Add</span></button>`;
   }
 
+  // ---------- Shopping list ----------
+  // One shared list, split into lists like Groceries and Amazon. Tap to check off; tap the name to move or edit.
+  const DEFAULT_LISTS = ['Groceries', 'Amazon'];
+  const shopCount = () => (S.shop || []).filter(x => !x.checked).length;
+  function shopLists() {
+    const used = [...new Set((S.shop || []).map(x => String(x.list || '').trim()).filter(Boolean))];
+    const out = [...DEFAULT_LISTS];
+    for (const u of used.sort((a, b) => a.localeCompare(b))) if (!out.some(o => o.toLowerCase() === u.toLowerCase())) out.push(u);
+    for (const extra of S.newLists || []) if (!out.some(o => o.toLowerCase() === extra.toLowerCase())) out.push(extra);
+    return out;
+  }
+  const sameList = (a, b) => String(a || '').trim().toLowerCase() === String(b || '').trim().toLowerCase();
+  function shopItemHtml(x) {
+    const sub = [x.note || '', x.checked && x.checkedBy && x.checkedBy !== S.uid ? `${nameOf(x.checkedBy)} got it` : ''].filter(Boolean).join(', ');
+    return `<li class="shop-item${x.checked ? ' checked' : ''}" data-id="${esc(x.id)}">
+      <button class="shop-check" data-act="shop-toggle" data-id="${esc(x.id)}" role="checkbox" aria-checked="${!!x.checked}" aria-label="${x.checked ? 'Uncheck' : 'Check off'} ${esc(x.name)}"><span></span></button>
+      <button class="shop-body" data-act="shop-edit" data-id="${esc(x.id)}">
+        <span class="shop-name">${esc(x.name)}</span>${sub ? `<span class="shop-note">${esc(sub)}</span>` : ''}
+      </button></li>`;
+  }
+  function renderShopping() {
+    S.view = 'shopping';
+    const lists = shopLists();
+    if (!S.shopList || !lists.some(l => sameList(l, S.shopList))) S.shopList = (() => { try { return localStorage.getItem('sp_shoplist') || lists[0]; } catch (e) { return lists[0]; } })();
+    if (!lists.some(l => sameList(l, S.shopList))) S.shopList = lists[0];
+    const filter = S.shopFilter || '';
+    const shown = filter ? lists.filter(l => sameList(l, filter)) : lists;
+    const byTime = (a, b) => (L.toMs(a.createdAt) || 0) - (L.toMs(b.createdAt) || 0);
+    const sections = shown.map(l => {
+      const items = (S.shop || []).filter(x => sameList(x.list, l));
+      const todo = items.filter(x => !x.checked).sort(byTime), got = items.filter(x => x.checked).sort((a, b) => (L.toMs(b.checkedAt) || 0) - (L.toMs(a.checkedAt) || 0));
+      if (!items.length && !DEFAULT_LISTS.some(d => sameList(d, l)) && !filter) return '';
+      const openKey = 'got-' + l.toLowerCase();
+      return `<section class="shop-list" data-list="${esc(l)}">
+        <div class="shop-head"><h3>${esc(l)}</h3><span class="count">${todo.length}</span></div>
+        ${todo.length ? `<ul class="shop-items">${todo.map(shopItemHtml).join('')}</ul>` : `<div class="empty">Nothing to get from ${esc(l)}.</div>`}
+        ${got.length ? `<details class="drawer got" data-drawer="${esc(openKey)}" ${(S.openDrawers || new Set()).has(openKey) ? 'open' : ''}>
+          <summary>Checked <span class="n">${got.length}</span></summary>
+          <ul class="shop-items">${got.map(shopItemHtml).join('')}</ul>
+          <button class="link clear-got" data-act="shop-clear" data-list="${esc(l)}">Clear checked items</button></details>` : ''}
+      </section>`;
+    }).join('');
+    app.innerHTML = `<header class="top"><button class="icon-btn" data-act="home" aria-label="Back">${ICON.back}</button><h1>Shopping</h1><span style="width:44px"></span></header>
+      <form class="shop-add" id="shop-add" autocomplete="off">
+        <input type="text" name="name" maxlength="400" placeholder="Add to ${esc(S.shopList)}…" aria-label="Add an item" enterkeyhint="done">
+        <button class="btn" type="submit" aria-label="Add">${ICON.plus}</button>
+      </form>
+      <div class="shop-to" role="group" aria-label="Add to which list">${lists.map(l => `<button type="button" class="cat-chip small" data-act="shop-to" data-list="${esc(l)}" aria-pressed="${sameList(l, S.shopList)}">${esc(l)}</button>`).join('')}
+        <button type="button" class="cat-chip small" data-act="shop-newlist">+ New list</button></div>
+      <p class="muted small shop-tip">Add several at once with commas: milk, eggs, bread.</p>
+      ${lists.length > 2 || filter ? `<nav class="cats" aria-label="Show">${['', ...lists].map(l => `<button class="cat-chip" data-act="shop-filter" data-list="${esc(l)}" aria-pressed="${sameList(l, filter)}">${esc(l || 'All lists')}</button>`).join('')}</nav>` : ''}
+      <div class="shop-lists">${sections || '<div class="empty">Your shopping list is empty.</div>'}</div>`;
+    const f = $('#shop-add');
+    f.onsubmit = e => { e.preventDefault(); addShopItems(f.name.value); f.name.value = ''; f.name.focus(); };
+    app.querySelectorAll('details.drawer').forEach(d => d.addEventListener('toggle', () => {
+      const set = S.openDrawers || (S.openDrawers = new Set());
+      if (d.open) set.add(d.dataset.drawer); else set.delete(d.dataset.drawer);
+    }));
+  }
+  function addShopItems(text) {
+    const names = String(text || '').split(/[,\n]/).map(x => x.trim()).filter(Boolean).slice(0, 30);
+    if (!names.length) return;
+    const list = S.shopList || DEFAULT_LISTS[0];
+    names.forEach((name, i) => B.setItem(S.gid, B.newItemId ? B.newItemId(S.gid) : 'i' + Date.now() + i, {
+      name: name.slice(0, 120), list, note: '', checked: false, addedBy: S.uid, createdAt: 'NOW'
+    }));
+    toast(names.length === 1 ? `Added to ${list}.` : `Added ${names.length} items to ${list}.`);
+  }
+  function openShopItem(id) {
+    const x = (S.shop || []).find(i => i.id === id);
+    if (!x) return;
+    let target = x.list || DEFAULT_LISTS[0];
+    openSheet(`<form id="item-form" class="stack" autocomplete="off">
+      <h2>Edit item</h2>
+      <label class="field"><span>Item</span><input type="text" name="name" maxlength="120" required value="${esc(x.name)}"></label>
+      <label class="field"><span>Note</span><input type="text" name="note" maxlength="200" value="${esc(x.note || '')}" placeholder="Size, brand, how many…"></label>
+      <div class="field"><span>Move to list</span><div class="shop-move">${shopLists().map(l => `<button type="button" class="cat-chip" data-move="${esc(l)}" aria-pressed="${sameList(l, target)}">${esc(l)}</button>`).join('')}</div></div>
+      <label class="field"><span>Or a new list</span><input type="text" name="newlist" maxlength="40" placeholder="e.g. Costco, Pharmacy"></label>
+      <div class="actions"><button class="btn block" type="submit">Save</button>
+        <button type="button" class="btn danger" data-act="shop-delete" data-id="${esc(x.id)}">Delete item</button></div></form>`, sheet => {
+      const form = sheet.querySelector('#item-form');
+      sheet.querySelector('.shop-move').onclick = e => {
+        const b = e.target.closest('[data-move]'); if (!b) return;
+        target = b.dataset.move; form.newlist.value = '';
+        sheet.querySelectorAll('[data-move]').forEach(o => o.setAttribute('aria-pressed', o === b));
+      };
+      form.onsubmit = e => {
+        e.preventDefault();
+        const name = form.name.value.trim(); if (!name) return;
+        const list = (form.newlist.value.trim() || target).slice(0, 40);
+        const moved = !sameList(list, x.list);
+        B.updateItem(S.gid, x.id, { name: name.slice(0, 120), note: form.note.value.trim().slice(0, 200), list });
+        closeSheet();
+        toast(moved ? `Moved to ${list}.` : 'Saved.');
+      };
+    });
+  }
+
   // =====================================================================
   // Task actions
   // =====================================================================
@@ -931,7 +1054,7 @@
   // The back gesture: whatever is on top goes away.
   function goBack() {
     if (sheetRoot.innerHTML) return closeSheet();
-    if (S.view === 'calendar' || S.view === 'done') return goHome();
+    if (S.view === 'calendar' || S.view === 'done' || S.view === 'shopping') return goHome();
   }
 
   function openSheet(html, onOpen) {
@@ -974,7 +1097,7 @@
     let x0 = null, y0 = 0, dx = 0, target = null, horizontal = false;
     addEventListener('touchstart', e => {
       const t = e.touches[0];
-      const canGoBack = sheetRoot.innerHTML || S.view === 'calendar' || S.view === 'done';
+      const canGoBack = sheetRoot.innerHTML || S.view === 'calendar' || S.view === 'done' || S.view === 'shopping';
       if (!canGoBack || t.clientX > EDGE) { x0 = null; return; }
       x0 = t.clientX; y0 = t.clientY; dx = 0; horizontal = false;
       target = sheetRoot.querySelector('.sheet') || app;
@@ -1473,6 +1596,32 @@
       case 'feed-off':
         if (!confirm('Turn off this calendar link? Calendars subscribed to it will stop updating.')) return;
         return B.deleteFeed(S.profile.feedToken).then(() => { S.profile.feedToken = null; refreshFeed(); toast('Calendar link turned off.'); }).catch(er => fail(er, 'turn off the link'));
+      case 'shopping': S.shopFilter = ''; return openView('shopping', renderShopping);
+      case 'shop-toggle': {
+        const x = (S.shop || []).find(i => i.id === id); if (!x) return;
+        if (navigator.vibrate) navigator.vibrate(8);
+        return B.updateItem(S.gid, id, x.checked ? { checked: false, checkedBy: null, checkedAt: null } : { checked: true, checkedBy: S.uid, checkedAt: 'NOW' });
+      }
+      case 'shop-edit': return openShopItem(id);
+      case 'shop-to': S.shopList = el.dataset.list; try { localStorage.setItem('sp_shoplist', S.shopList); } catch (er) {} renderShopping(); return $('#shop-add input')?.focus();
+      case 'shop-filter': S.shopFilter = el.dataset.list; return renderShopping();
+      case 'shop-newlist': {
+        const n = (prompt('Name the new list (for example Costco or Pharmacy)') || '').trim().slice(0, 40);
+        if (!n) return;
+        S.newLists = [...(S.newLists || []), n]; S.shopList = n;
+        return renderShopping();
+      }
+      case 'shop-delete': {
+        const x = (S.shop || []).find(i => i.id === el.dataset.id); if (!x) return;
+        const keep = { ...x }; delete keep.id;
+        B.deleteItem(S.gid, x.id); closeSheet();
+        return toast(`Deleted ${x.name}.`, 'Undo', () => B.setItem(S.gid, x.id, keep));
+      }
+      case 'shop-clear': {
+        const gone = (S.shop || []).filter(x => x.checked && sameList(x.list, el.dataset.list));
+        gone.forEach(x => B.deleteItem(S.gid, x.id));
+        return toast(`Cleared ${gone.length} checked ${gone.length === 1 ? 'item' : 'items'}.`, 'Undo', () => gone.forEach(x => { const k = { ...x }; delete k.id; B.setItem(S.gid, x.id, k); }));
+      }
       case 'calendar': S.calMode = null; S.calMonth = null; S.calDay = null; return openView('calendar', renderCalendar);
       case 'cal-mode':
         if (el.dataset.mode === S.calMode) return;

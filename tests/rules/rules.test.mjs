@@ -208,6 +208,19 @@ test('Claude links: each person makes their own, for their own household, and on
   await assertSucceeds(deleteDoc(doc(db.B(), 'connectors', tok)));
 });
 
+test('shopping list: members can add, check off, move and delete; outsiders cannot', async () => {
+  const item = { name: 'Milk', list: 'Groceries', note: '', checked: false, addedBy: A, createdAt: serverTimestamp() };
+  await assertSucceeds(setDoc(doc(db.A(), 'groups', G, 'shopping', 's1'), item));
+  await assertSucceeds(updateDoc(doc(db.B(), 'groups', G, 'shopping', 's1'), { checked: true, checkedBy: B, checkedAt: serverTimestamp() }));
+  await assertSucceeds(updateDoc(doc(db.B(), 'groups', G, 'shopping', 's1'), { list: 'Amazon' }));
+  await assertFails(getDoc(doc(db.C(), 'groups', G, 'shopping', 's1')));
+  await assertFails(setDoc(doc(db.C(), 'groups', G, 'shopping', 's2'), { ...item, addedBy: C }));
+  await assertFails(setDoc(doc(db.A(), 'groups', G, 'shopping', 's3'), { ...item, name: '' }));
+  await assertFails(setDoc(doc(db.A(), 'groups', G, 'shopping', 's4'), { ...item, price: 3 }));
+  await assertFails(updateDoc(doc(db.B(), 'groups', G, 'shopping', 's1'), { addedBy: B }));
+  await assertSucceeds(deleteDoc(doc(db.B(), 'groups', G, 'shopping', 's1')));
+});
+
 test('anything outside groups and users is closed', async () => {
   await assertFails(setDoc(doc(db.A(), 'config', 'x'), { a: 1 }));
   await assertFails(getDoc(doc(db.A(), 'config', 'x')));

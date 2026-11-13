@@ -53,6 +53,7 @@ To open sign-up later (Phase 3): set `allowlist` and `ALLOWLIST` to `null`, and 
 - **Calendar:** the calendar button shows a month of tasks with due dates, colored by person (Settings → Colors).
 - **Hebrew dates and holidays:** Settings → Calendar → Show Hebrew dates and holidays (diaspora observance, per person).
 - **Google Calendar / Apple Calendar:** Settings → Calendar → Make a calendar link. It's a private subscription feed (`/cal/<token>.ics`, served by the `calendarFeed` function); turning it off deletes the link.
+- **Shopping list:** the cart button. One shared list split into lists (Groceries, Amazon, or your own). Tap the box to check an item off, tap the name to move it to another list, add a note or delete it, and clear checked items when you're done. Stored in `groups/{groupId}/shopping`.
 - **Claude:** Settings → Connect to Claude makes a private link for each person. Add it in claude.ai under Customize → Connectors → Add custom connector (No sign in). Claude can then list, add, update, snooze, take and finish tasks, acting as that person (`functions/mcp.js`, served by `claudeConnector` at `/mcp/<token>`).
 - **Import:** Settings → Import tasks takes an import code or link (see `openImport` in `app.js` for the format).
 
