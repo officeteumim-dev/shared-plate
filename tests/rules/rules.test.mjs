@@ -221,6 +221,25 @@ test('shopping list: members can add, check off, move and delete; outsiders cann
   await assertSucceeds(deleteDoc(doc(db.B(), 'groups', G, 'shopping', 's1')));
 });
 
+test('comments: members can comment on tasks and shopping items as themselves; outsiders cannot; nobody edits them', async () => {
+  await env.withSecurityRulesDisabled(async c => {
+    await setDoc(doc(c.firestore(), 'groups', G, 'shopping', 's1'), { name: 'Milk', list: 'Groceries', checked: false, addedBy: A });
+  });
+  const c1 = { text: 'Which brand?', by: A, at: serverTimestamp() };
+  await assertSucceeds(setDoc(doc(db.A(), 'groups', G, 'shopping', 's1', 'comments', 'c1'), c1));
+  await assertSucceeds(setDoc(doc(db.B(), 'groups', G, 'tasks', 't1', 'comments', 'c2'), { ...c1, by: B }));
+  await assertSucceeds(getDoc(doc(db.B(), 'groups', G, 'shopping', 's1', 'comments', 'c1')));
+  await assertFails(getDoc(doc(db.C(), 'groups', G, 'shopping', 's1', 'comments', 'c1')));
+  await assertFails(setDoc(doc(db.B(), 'groups', G, 'shopping', 's1', 'comments', 'c3'), c1), 'pretending to be A');
+  await assertFails(setDoc(doc(db.C(), 'groups', G, 'shopping', 's1', 'comments', 'c4'), { ...c1, by: C }));
+  await assertFails(updateDoc(doc(db.A(), 'groups', G, 'shopping', 's1', 'comments', 'c1'), { text: 'changed' }));
+  await assertFails(deleteDoc(doc(db.B(), 'groups', G, 'shopping', 's1', 'comments', 'c1')));
+  await assertSucceeds(deleteDoc(doc(db.A(), 'groups', G, 'shopping', 's1', 'comments', 'c1')));
+  // The summary on the item
+  await assertSucceeds(updateDoc(doc(db.A(), 'groups', G, 'shopping', 's1'), { commentCount: 1, lastComment: 'Which brand?', lastCommentBy: A, lastCommentAt: serverTimestamp(), [`seenBy.${A}`]: Date.now() }));
+  await assertSucceeds(updateDoc(doc(db.B(), 'groups', G, 'tasks', 't1'), { commentCount: 1, lastComment: 'ok', lastCommentBy: B, lastCommentAt: serverTimestamp() }));
+});
+
 test('anything outside groups and users is closed', async () => {
   await assertFails(setDoc(doc(db.A(), 'config', 'x'), { a: 1 }));
   await assertFails(getDoc(doc(db.A(), 'config', 'x')));

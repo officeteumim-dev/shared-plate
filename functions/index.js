@@ -92,6 +92,51 @@ async function sendTo(user, uid, msg, stats) {
   if (Object.keys(dead).length) await db.doc(`users/${uid}`).update(dead).catch(() => {});
 }
 
+// ---------- Comments ----------
+// Comments on a shopping item or a task (…/comments/<id>: text, by, at). The person who posts one asks us to tell
+// everyone else in the household, unless they're in quiet hours or have turned comment notifications off.
+const COMMENT_KINDS = { shopping: 'shopping', tasks: 'tasks' };
+async function notifyComment(groupId, kind, itemId, commentId, callerUid) {
+  if (!COMMENT_KINDS[kind] || !/^[A-Za-z0-9]{1,40}$/.test(itemId) || !/^[A-Za-z0-9]{1,40}$/.test(commentId)) throw new HttpsError('invalid-argument', 'Bad comment.');
+  const group = (await db.doc(`groups/${groupId}`).get()).data();
+  if (!group || !(group.members || {})[callerUid]) throw new HttpsError('permission-denied', 'Not in this household.');
+  const cRef = db.doc(`groups/${groupId}/${kind}/${itemId}/comments/${commentId}`);
+  const sent = await db.runTransaction(async tx => {
+    const c = (await tx.get(cRef)).data();
+    if (!c || c.by !== callerUid || c.notified) return null;
+    tx.update(cRef, { notified: true });
+    return c;
+  });
+  if (!sent) return { sent: 0 };
+  const item = (await db.doc(`groups/${groupId}/${kind}/${itemId}`).get()).data() || {};
+  const who = (group.names || {})[callerUid] || 'Someone';
+  const what = kind === 'shopping' ? item.name : item.title;
+  const siteUrl = SITE_URL.value() || `https://${process.env.GCLOUD_PROJECT}.web.app`;
+  const link = `${siteUrl.replace(/\/$/, '')}/#${kind === 'shopping' ? 'shop' : 'task'}=${encodeURIComponent(groupId + '/' + itemId)}`;
+  const msg = {
+    webpush: {
+      notification: { title: `${who} about ${what || 'an item'}`.slice(0, 120), body: String(sent.text || '').slice(0, 180), icon: '/icons/icon-192.png', badge: '/icons/badge-72.png', tag: `c-${groupId}/${itemId}` },
+      fcmOptions: { link },
+      headers: { Urgency: 'high', TTL: '86400' }
+    },
+    data: { groupId, kind, itemId }
+  };
+  const stats = { sent: 0 };
+  const now = Date.now();
+  for (const uid of Object.keys(group.members)) {
+    if (uid === callerUid) continue;
+    const u = (await db.doc(`users/${uid}`).get()).data() || {};
+    if ((u.prefs || {}).comments === false || L.inQuiet(u.quiet, u.tz, now)) continue;
+    await sendTo(u, uid, msg, stats);
+  }
+  return { sent: stats.sent };
+}
+exports.notifyComment = onCall(async req => {
+  if (!req.auth || !allowedEmail(req.auth.token)) throw new HttpsError('permission-denied', 'Sign in first.');
+  const d = req.data || {};
+  return notifyComment(String(d.groupId || ''), String(d.kind || ''), String(d.itemId || ''), String(d.commentId || ''), req.auth.uid);
+});
+
 exports.sendReminders = onSchedule({ schedule: 'every 5 minutes', timeoutSeconds: 120 }, async () => {
   const now = Date.now();
   const due = await db.collectionGroup('tasks').where('notifyAt', '<=', TS.fromMillis(now)).orderBy('notifyAt').limit(300).get();
@@ -203,7 +248,20 @@ exports.claudeConnector = onRequest({ invoker: 'public', memory: '256MiB', maxIn
       async shopGet(id) { if (!/^[A-Za-z0-9]{1,40}$/.test(id)) return null; const d = await shop.doc(id).get(); return d.exists ? fromDoc(d) : null; },
       async shopAdd(data) { const ref = shop.doc(); await ref.set(toFirestore(data)); return ref.id; },
       async shopUpdate(id, patch) { await shop.doc(id).update(toFirestore(patch)); },
-      async shopDelete(id) { await shop.doc(id).delete(); }
+      async shopDelete(id) { await shop.doc(id).delete(); },
+      async comments(kind, id) {
+        const q = await db.collection(`groups/${link.groupId}/${kind}/${id}/comments`).orderBy('at').limit(50).get();
+        return q.docs.map(fromDoc).map(c => ({ ...c, at: c.at && c.at.toMillis ? c.at.toMillis() : c.at }));
+      },
+      async addComment(kind, id, text) {
+        const ref = db.collection(`groups/${link.groupId}/${kind}/${id}/comments`).doc();
+        await ref.set({ text, by: link.uid, at: FV.serverTimestamp() });
+        await db.doc(`groups/${link.groupId}/${kind}/${id}`).update({
+          commentCount: FV.increment(1), lastComment: text.slice(0, 200), lastCommentBy: link.uid, lastCommentAt: FV.serverTimestamp(),
+          [`seenBy.${link.uid}`]: Date.now()
+        });
+        await notifyComment(link.groupId, kind, id, ref.id, link.uid).catch(e => logger.warn('comment push failed', e.message));
+      }
     }
   };
   const body = req.body;
