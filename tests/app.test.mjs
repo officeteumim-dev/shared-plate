@@ -593,3 +593,30 @@ test('on a touch screen the handle must be held before a task moves; a quick swi
   await drag(600); // press and hold, then drag up
   await page.waitForFunction(() => document.querySelector('ul[data-sortable="mine/Car"] li .title')?.textContent.includes('Rotate the tires'));
 });
+
+test('opening a finished task offers Mark not done, which puts it back', async () => {
+  const { page, errors } = await open();
+  await page.click('[data-act=show-done]');
+  await page.click('.done-list [data-act=edit]:has-text("Water the plants")');
+  assert.equal(await page.locator('.sheet [data-act=done-from-sheet]').count(), 0, 'no Mark done on a finished task');
+  assert.equal(await page.locator('.sheet [data-act=snooze-menu]').count(), 0, 'no Snooze either');
+  assert.match(await page.textContent('.sheet'), /You finished this/);
+  await page.click('.sheet [data-act=undone-from-sheet]');
+  await page.click('[data-act=home]');
+  await page.waitForFunction(() => [...document.querySelectorAll('section.lane.mine > ul .title')].some(e => e.textContent.includes('Water the plants')));
+  assert.deepEqual(errors, []);
+});
+
+test('marking a repeating task not done removes the next copy it created', async () => {
+  const { page } = await open();
+  await page.click('section.lane.mine > ul .row-wrap:has-text("Pick up challah") [data-act=done]');
+  await page.waitForFunction(() => /Next one/.test(document.querySelector('#toast')?.textContent || ''));
+  await page.click('[data-act=show-done]');
+  await page.click('.done-list [data-act=edit]:has-text("Pick up challah")');
+  await page.click('.sheet [data-act=undone-from-sheet]');
+  await page.click('[data-act=home]');
+  await page.click('[data-act=calendar]');
+  await page.click('[data-act=cal-next]');
+  const copies = await page.locator('.wk-day:nth-child(6) .title:has-text("Pick up challah")').count();
+  assert.equal(copies, 1, 'just the projected repeat of the reopened task, not a second copy');
+});
