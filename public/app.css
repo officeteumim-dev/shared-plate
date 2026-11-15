@@ -438,3 +438,10 @@ section.lane .list + .cat-head { margin-top: 14px; }
 .say textarea { min-height: 52px; max-height: 140px; resize: none; }
 .say .btn { width: 52px; padding: 0; }
 .say .btn svg { width: 22px; height: 22px; }
+
+/* ---------- Daf Yomi reminder and the Shabbos note ---------- */
+.shabbos-note { margin: 0; padding: 10px 12px; border-radius: 12px; background: #ddeaf7; color: #1f3f66; }
+.daf-rem { display: grid; gap: 10px; padding: 4px 0 4px 14px; border-left: 3px solid var(--line); }
+.day-times { display: grid; gap: 6px; }
+.day-time { display: grid; grid-template-columns: 1fr 150px; align-items: center; gap: 10px; min-height: 44px; }
+.day-time input { min-height: 44px; padding: 8px 10px; }

@@ -55,7 +55,8 @@
       "codebase": "default",
       "runtime": "nodejs22",
       "predeploy": [
-        "cp \"$PROJECT_DIR/public/logic.js\" \"$RESOURCE_DIR/logic.js\""
+        "cp \"$PROJECT_DIR/public/logic.js\" \"$RESOURCE_DIR/logic.js\"",
+        "cp \"$PROJECT_DIR/public/hebrew.js\" \"$RESOURCE_DIR/hebrew.js\""
       ]
     }
   ],

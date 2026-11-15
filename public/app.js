@@ -1428,8 +1428,10 @@
       <section class="settings-section" id="calendar-settings"><h3>Calendar</h3>
         ${Hb && Hb.supported ? `<label class="toggle"><span>Show Hebrew dates and holidays</span><input type="checkbox" id="p-hebrew" ${hebOn() ? 'checked' : ''}></label>
         <p class="muted small">Yamim Tovim, fasts, Chanukah, Purim and Rosh Chodesh, as kept outside Israel.</p>
+        <p class="shabbos-note small">While this is on, you get <b>no notifications on Shabbos or Yom Tov</b>: none from an hour before sunset until 1½ hours after sunset when it ends. Task reminders that fall then arrive afterward. Times are worked out from your phone’s time zone.</p>
         <label class="toggle"><span>Show the weekly parsha</span><input type="checkbox" id="p-parsha" ${parshaOn() ? 'checked' : ''}></label>
-        <label class="toggle"><span>Show the Daf Yomi</span><input type="checkbox" id="p-daf" ${dafOn() ? 'checked' : ''}></label>` : '<p class="muted small">This browser can’t show Hebrew dates.</p>'}
+        <label class="toggle"><span>Show the Daf Yomi</span><input type="checkbox" id="p-daf" ${dafOn() ? 'checked' : ''}></label>
+        <div id="daf-rem">${dafRemHtml()}</div>` : '<p class="muted small">This browser can’t show Hebrew dates.</p>'}
         <div id="feed-box">${feedHtml()}</div>
       </section>
       <section class="settings-section" id="claude"><h3>Connect to Claude</h3>
@@ -1470,8 +1472,10 @@
         prefs: { due: sheet.querySelector('#p-due').checked, back: sheet.querySelector('#p-back').checked, comments: sheet.querySelector('#p-comments').checked }
       }).catch(e => fail(e, 'save quiet hours'));
       ['#q-on', '#q-start', '#q-end', '#p-due', '#p-back', '#p-comments'].forEach(s => sheet.querySelector(s).addEventListener('change', saveQuiet));
+      bindDafRem(sheet);
       [['#p-hebrew', 'hebrew'], ['#p-parsha', 'parsha'], ['#p-daf', 'daf']].forEach(([sel, key]) => sheet.querySelector(sel)?.addEventListener('change', e => {
         S.profile.prefs = { ...(S.profile.prefs || {}), [key]: e.target.checked };
+        if (key === 'daf') { const box = sheet.querySelector('#daf-rem'); box.innerHTML = dafRemHtml(); bindDafRem(sheet); }
         B.saveProfile({ prefs: { [key]: e.target.checked } }).catch(er => fail(er, 'save that setting'));
         render();
       }));
@@ -1554,6 +1558,47 @@
   function makeFeedToken() {
     const a = new Uint8Array(24); crypto.getRandomValues(a);
     return btoa(String.fromCharCode(...a)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+  }
+
+  // ---------- Daily Daf Yomi reminder (shown when Show the Daf Yomi is on) ----------
+  const DAYNAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Shabbos'];
+  const dafRem = () => ({ enabled: false, same: true, time: '21:00', days: {}, ...((S.profile.prefs || {}).dafReminder || {}) });
+  function dafRemHtml() {
+    if (!dafOn()) return '';
+    const r = dafRem();
+    return `<div class="daf-rem">
+      <label class="toggle"><span>Daily Daf Yomi reminder</span><input type="checkbox" id="daf-on" ${r.enabled ? 'checked' : ''}></label>
+      ${r.enabled ? `<div class="seg" role="group" aria-label="Reminder time">
+          <button type="button" data-daf-mode="same" aria-pressed="${r.same !== false}" aria-label="Same time every day">One time</button>
+          <button type="button" data-daf-mode="days" aria-pressed="${r.same === false}" aria-label="A different time each day">Each day</button></div>
+        ${r.same !== false
+          ? `<label class="field"><span>Remind me at</span><input type="time" id="daf-time" value="${esc(r.time || '21:00')}"></label>`
+          : `<div class="day-times">${DAYNAMES.map((n, i) => i === 6 && hebOn()
+              ? `<div class="day-time"><span>${n}</span><span class="muted small">No reminder on Shabbos</span></div>`
+              : `<label class="day-time"><span>${n}</span><input type="time" data-day="${i}" value="${esc((r.days || {})[i] || '')}" aria-label="${n} reminder time"></label>`).join('')}</div>
+             <p class="muted small">Leave a day empty for no reminder that day.</p>`}
+        <p class="muted small">The reminder tells you the day’s daf. Notifications need to be on for this phone (above).${hebOn() ? ' None are sent on Shabbos or Yom Tov, so pick a Friday or Erev Yom Tov time that’s before sunset.' : ''}</p>` : ''}
+    </div>`;
+  }
+  function saveDafRem(patch) {
+    const next = { ...dafRem(), ...patch };
+    S.profile.prefs = { ...(S.profile.prefs || {}), dafReminder: next };
+    B.saveProfile({ prefs: { dafReminder: next } }).catch(er => fail(er, 'save the reminder'));
+  }
+  function bindDafRem(sheet) {
+    const box = sheet.querySelector('#daf-rem'); if (!box) return;
+    const redraw = () => { box.innerHTML = dafRemHtml(); bindDafRem(sheet); };
+    box.querySelector('#daf-on')?.addEventListener('change', e => { saveDafRem({ enabled: e.target.checked }); redraw(); });
+    box.querySelectorAll('[data-daf-mode]').forEach(b => b.addEventListener('click', () => {
+      const same = b.dataset.dafMode === 'same', r = dafRem();
+      // Switching to "Different each day" fills every day with the current time, so only the days that differ need changing.
+      const days = same ? r.days : Object.fromEntries(DAYNAMES.map((n, i) => [i, r.time || '21:00']));
+      saveDafRem({ same, days }); redraw();
+    }));
+    box.querySelector('#daf-time')?.addEventListener('change', e => saveDafRem({ time: e.target.value || '21:00' }));
+    box.querySelectorAll('[data-day]').forEach(inp => inp.addEventListener('change', () => {
+      saveDafRem({ days: { ...(dafRem().days || {}), [inp.dataset.day]: inp.value || '' } });
+    }));
   }
 
   // Repaints the Colors section after a change, without closing Settings.

@@ -218,5 +218,79 @@
     }
   }
 
-  return { supported, parts, gematria, format, formatEnglish, dayLetters, hebrewMonthName, holidays, parsha, dafYomi, PARSHIYOS: P, SHAS };
+  // ---------- Shabbos and Yom Tov: no notifications ----------
+  // Sunset from the classic almanac formula, for a place picked from the person's time zone. The quiet period runs
+  // from an hour before sunset on Friday or Erev Yom Tov until 1½ hours after sunset when it ends, which leaves a wide
+  // margin for candle lighting, nightfall and where in the time zone they live.
+  const ZONES = {
+    'America/New_York': [40.71, -74.01], 'America/Detroit': [42.33, -83.05], 'America/Toronto': [43.65, -79.38],
+    'America/Chicago': [41.88, -87.63], 'America/Denver': [39.74, -104.99], 'America/Phoenix': [33.45, -112.07],
+    'America/Los_Angeles': [34.05, -118.24], 'America/Montreal': [45.50, -73.57], 'America/Halifax': [44.65, -63.57],
+    'Asia/Jerusalem': [31.78, 35.22], 'Europe/London': [51.51, -0.13], 'Europe/Paris': [48.86, 2.35],
+    'Europe/Antwerp': [51.22, 4.40], 'Europe/Brussels': [50.85, 4.35], 'Australia/Melbourne': [-37.81, 144.96],
+    'America/Sao_Paulo': [-23.55, -46.63], 'America/Argentina/Buenos_Aires': [-34.60, -58.38], 'Africa/Johannesburg': [-26.20, 28.05]
+  };
+  function zoneOffsetMin(tz, ms) {
+    try {
+      const p = new Intl.DateTimeFormat('en-US', { timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' })
+        .formatToParts(new Date(ms)).reduce((o, x) => { o[x.type] = +x.value; return o; }, {});
+      return Math.round((Date.UTC(p.year, p.month - 1, p.day, p.hour % 24, p.minute) - Math.floor(ms / 60000) * 60000) / 60000);
+    } catch (e) { return 0; }
+  }
+  // A place for a time zone: a known city, or a guess from its UTC offset (latitude 40°).
+  function placeFor(tz) {
+    if (ZONES[tz]) return ZONES[tz];
+    return [40, Math.max(-180, Math.min(180, zoneOffsetMin(tz, Date.now()) / 4))];
+  }
+  // Sunset (ms, UTC) on the civil date y-m-d (month 1–12) at lat/lon.
+  function sunset(y, m, d, lat, lon) {
+    const rad = Math.PI / 180, deg = 180 / Math.PI;
+    const N = Math.round((Date.UTC(y, m - 1, d) - Date.UTC(y, 0, 0)) / 864e5);
+    const lngHour = lon / 15, t = N + ((18 - lngHour) / 24);
+    const M = 0.9856 * t - 3.289;
+    let L = M + 1.916 * Math.sin(M * rad) + 0.020 * Math.sin(2 * M * rad) + 282.634;
+    L = ((L % 360) + 360) % 360;
+    let RA = deg * Math.atan(0.91764 * Math.tan(L * rad));
+    RA = ((RA % 360) + 360) % 360;
+    RA = (RA + (Math.floor(L / 90) * 90 - Math.floor(RA / 90) * 90)) / 15;
+    const sinDec = 0.39782 * Math.sin(L * rad), cosDec = Math.cos(Math.asin(sinDec));
+    const cosH = (Math.cos(90.833 * rad) - sinDec * Math.sin(lat * rad)) / (cosDec * Math.cos(lat * rad));
+    const H = (cosH > 1 ? 0 : cosH < -1 ? 180 : deg * Math.acos(cosH)) / 15;
+    const T = H + RA - 0.06571 * t - 6.622;
+    const UT = (((T - lngHour) % 24) + 24) % 24;
+    let ms = Date.UTC(y, m - 1, d) + UT * 3600e3;
+    if (ms < Date.UTC(y, m - 1, d, 12) - lngHour * 3600e3) ms += 864e5; // sunset is in the afternoon, local time
+    return ms;
+  }
+  // The civil date in tz for an instant: { y, m, d }.
+  function localYMD(ms, tz) {
+    const p = new Intl.DateTimeFormat('en-US', { timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit' })
+      .formatToParts(new Date(ms)).reduce((o, x) => { o[x.type] = +x.value; return o; }, {});
+    return { y: p.year, m: p.month, d: p.day };
+  }
+  const BEFORE = 60 * 60000, AFTER = 90 * 60000;
+  // Is the civil date (y, m, d) Shabbos or a day of Yom Tov (diaspora)?
+  function restDay(y, m, d) {
+    const noonUtc = Date.UTC(y, m - 1, d, 12);
+    if (new Date(noonUtc).getUTCDay() === 6) return true;
+    // holidays() reads the date in the machine's time zone, so give it local noon of that date.
+    return holidays(new Date(y, m - 1, d, 12).getTime()).some(h => h.kind === 'yomtov');
+  }
+  // If notifications must wait at this moment, when they can go out again (ms); otherwise null.
+  function restUntil(ms, tz) {
+    const [lat, lon] = placeFor(tz);
+    const { y, m, d } = localYMD(ms, tz);
+    const day = k => { const x = new Date(Date.UTC(y, m - 1, d + k)); return [x.getUTCFullYear(), x.getUTCMonth() + 1, x.getUTCDate()]; };
+    const today = day(0), tomorrow = day(1);
+    const startsTonight = restDay(...tomorrow) && ms >= sunset(...today, lat, lon) - BEFORE;
+    const stillOn = restDay(...today) && ms < sunset(...today, lat, lon) + AFTER;
+    if (!startsTonight && !stillOn) return null;
+    // Walk forward to the last day of this Shabbos / Yom Tov.
+    let k = restDay(...today) ? 0 : 1;
+    while (restDay(...day(k + 1)) && k < 4) k++;
+    return sunset(...day(k), lat, lon) + AFTER;
+  }
+
+  return { supported, parts, gematria, format, formatEnglish, dayLetters, hebrewMonthName, holidays, parsha, dafYomi, PARSHIYOS: P, SHAS,
+    sunset, placeFor, restUntil, restDay, localYMD };
 });

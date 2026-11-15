@@ -52,3 +52,30 @@ test('Rosh Chodesh', () => {
   assert.ok(names('2026-11-11').includes('Rosh Chodesh Kislev')); // 1 Kislev
   assert.deepEqual(names('2026-11-09'), []);
 });
+
+test('sunset is within a few minutes of published times', () => {
+  const ny = Hb.sunset(2026, 11, 13, 40.71, -74.01), june = Hb.sunset(2026, 6, 21, 40.71, -74.01);
+  const near = (ms, iso) => assert.ok(Math.abs(ms - Date.parse(iso)) < 4 * 60000, `${new Date(ms).toISOString()} vs ${iso}`);
+  near(ny, '2026-11-13T16:40:00-05:00');
+  near(june, '2026-06-21T20:31:00-04:00');
+  near(Hb.sunset(2026, 11, 13, 31.78, 35.22), '2026-11-13T16:41:00+02:00');
+});
+
+test('no notifications from an hour before sunset Friday until 1½ hours after sunset Shabbos', () => {
+  const ny = 'America/New_York', at = s => Date.parse(s);
+  assert.equal(Hb.restUntil(at('2026-11-13T15:30:00-05:00'), ny), null, 'Friday afternoon is fine');
+  const until = Hb.restUntil(at('2026-11-13T15:45:00-05:00'), ny);
+  assert.ok(until > at('2026-11-14T18:00:00-05:00') && until < at('2026-11-14T18:15:00-05:00'));
+  assert.equal(Hb.restUntil(at('2026-11-14T12:00:00-05:00'), ny), until);
+  assert.equal(Hb.restUntil(at('2026-11-14T18:30:00-05:00'), ny), null, 'Motzei Shabbos');
+  assert.equal(Hb.restUntil(at('2026-11-17T12:00:00-05:00'), ny), null, 'a Tuesday');
+});
+
+test('Yom Tov joined to Shabbos runs as one stretch (Shavuos 2027, Fri–Sat); Yom Kippur too', () => {
+  const ny = 'America/New_York', at = s => Date.parse(s);
+  const start = Hb.restUntil(at('2027-06-10T20:00:00-04:00'), ny); // Erev Shavuos, Thursday evening
+  assert.ok(start > at('2027-06-12T21:30:00-04:00') && start < at('2027-06-12T22:15:00-04:00'));
+  assert.equal(Hb.restUntil(at('2027-06-11T12:00:00-04:00'), ny), start);
+  assert.ok(Hb.restUntil(at('2026-09-21T12:00:00-04:00'), ny), 'Yom Kippur 5787');
+  assert.equal(Hb.restUntil(at('2026-09-23T12:00:00-04:00'), ny), null, 'the Wednesday after');
+});

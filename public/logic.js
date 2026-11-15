@@ -213,7 +213,8 @@
   // Decides what the reminder job does with one task that has come due.
   // group: { members: {uid: role}, names }, users: { uid: { quiet, tz, prefs } }.
   // Returns { send: [{ uid, kind }], update: {...fields to write on the task} }.
-  function planReminder(t, group, users, now) {
+  // restUntil(user, now): optional; when it returns a time, that person gets nothing until then (Shabbos and Yom Tov).
+  function planReminder(t, group, users, now, restUntil) {
     const members = Object.keys((group && group.members) || {});
     const update = {};
     if (t.status === 'done') return { send: [], update: { notifyAt: null, notifyOnly: null, notifyKind: null } };
@@ -229,11 +230,14 @@
       const u = users[uid] || {};
       const prefs = u.prefs || {};
       if (prefs[kind] === false) continue;
-      if (inQuiet(u.quiet, u.tz, now)) later.push(uid); else send.push({ uid, kind });
+      const rest = restUntil ? restUntil(u, now) : null;
+      if (rest) later.push({ uid, at: rest });
+      else if (inQuiet(u.quiet, u.tz, now)) later.push({ uid, at: quietEndsAt(u.quiet, u.tz, now) });
+      else send.push({ uid, kind });
     }
     if (later.length) {
-      update.notifyAt = Math.min(...later.map(uid => quietEndsAt(users[uid].quiet, users[uid].tz, now)));
-      update.notifyOnly = later;
+      update.notifyAt = Math.min(...later.map(l => l.at));
+      update.notifyOnly = later.map(l => l.uid);
       update.notifyKind = kind; // so a deferred "back on your plate" still says so after quiet hours
 
     } else {
@@ -244,6 +248,23 @@
       update.notifyKind = null;
     }
     return { send, update };
+  }
+
+  // ---------- Daf Yomi reminder ----------
+  // pref: { enabled, same: true|false, time: 'HH:MM', days: { 0..6: 'HH:MM' | '' } } (days used when same is false).
+  // Returns today's local date ('YYYY-MM-DD') when the reminder should go out now, or null. It goes out in the half
+  // hour after the chosen time, once a day (sentOn is the last date it went out).
+  function dafReminderDue(pref, tz, now, sentOn) {
+    if (!pref || !pref.enabled) return null;
+    const p = new Intl.DateTimeFormat('en-CA', { timeZone: tz || 'UTC', year: 'numeric', month: '2-digit', day: '2-digit', weekday: 'short', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' })
+      .formatToParts(new Date(now)).reduce((o, x) => { o[x.type] = x.value; return o; }, {});
+    const date = `${p.year}-${p.month}-${p.day}`;
+    if (sentOn === date) return null;
+    const wd = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].indexOf(p.weekday);
+    const at = hm(pref.same === false ? (pref.days || {})[wd] : pref.time);
+    if (at == null) return null;
+    const mins = (+p.hour % 24) * 60 + +p.minute;
+    return mins >= at && mins - at < 30 ? date : null;
   }
 
   // ---------- Display ----------
@@ -271,6 +292,6 @@
   return {
     toMs, effectiveStatus, responsible, laneOf, lanes, needsNudge, isOverdue, arrange, byCategory, categories, reorder,
     normRepeat, nextDue, repeatLabel, inQuiet, quietEndsAt, minutesIn,
-    notifyAtFor, recipients, planReminder, fmtWhen, fmtTime, startOfDay, endOfDay
+    notifyAtFor, recipients, planReminder, dafReminderDue, fmtWhen, fmtTime, startOfDay, endOfDay
   };
 });

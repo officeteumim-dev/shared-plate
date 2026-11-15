@@ -149,3 +149,27 @@ test('friendly dates', () => {
   assert.equal(L.fmtWhen(at('2026-11-10T00:00'), NOW), 'Tue');
   assert.equal(L.fmtWhen(at('2026-12-25T00:00'), NOW), 'Dec 25');
 });
+
+test('Shabbos/Yom Tov: reminders wait for the people who keep it, others get them now', () => {
+  const g = { members: { me: 'owner', her: 'member' } };
+  const until = NOW + 5 * H;
+  const restUntil = u => (u.prefs && u.prefs.hebrew ? until : null);
+  const users = { me: { prefs: { hebrew: true } }, her: {} };
+  const p = L.planReminder({ owner: 'shared', status: 'open' }, g, users, NOW, restUntil);
+  assert.deepEqual(p.send, [{ uid: 'her', kind: 'due' }]);
+  assert.deepEqual(p.update.notifyOnly, ['me']);
+  assert.equal(p.update.notifyAt, until);
+});
+
+test('Daf Yomi reminder: once, in the half hour after the chosen time, per day of the week', () => {
+  const at = s => Date.parse(s);
+  const same = { enabled: true, time: '21:00' };
+  assert.equal(L.dafReminderDue(same, 'America/New_York', at('2026-11-15T20:59:00-05:00'), null), null);
+  assert.equal(L.dafReminderDue(same, 'America/New_York', at('2026-11-15T21:04:00-05:00'), null), '2026-11-15');
+  assert.equal(L.dafReminderDue(same, 'America/New_York', at('2026-11-15T21:04:00-05:00'), '2026-11-15'), null, 'already sent today');
+  assert.equal(L.dafReminderDue(same, 'America/New_York', at('2026-11-15T21:45:00-05:00'), null), null, 'too late, wait for tomorrow');
+  const days = { enabled: true, same: false, days: { 0: '08:00', 1: '' } };
+  assert.equal(L.dafReminderDue(days, 'America/New_York', at('2026-11-15T08:10:00-05:00'), null), '2026-11-15'); // Sunday
+  assert.equal(L.dafReminderDue(days, 'America/New_York', at('2026-11-16T08:10:00-05:00'), null), null, 'Monday is off');
+  assert.equal(L.dafReminderDue({ ...same, enabled: false }, 'America/New_York', at('2026-11-15T21:04:00-05:00'), null), null);
+});

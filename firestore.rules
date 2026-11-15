@@ -162,7 +162,7 @@ service cloud.firestore {
     // Only you can read or change your own record. The other person's name is shown from the group's `names` map.
     match /users/{u} {
       function validUser(d) {
-        return d.keys().hasOnly(['displayName', 'email', 'groupIds', 'tokens', 'prefs', 'quiet', 'tz', 'createdAt', 'updatedAt', 'feedToken', 'claudeToken'])
+        return d.keys().hasOnly(['displayName', 'email', 'groupIds', 'tokens', 'prefs', 'quiet', 'tz', 'createdAt', 'updatedAt', 'feedToken', 'claudeToken', 'dafSentOn'])
           && optStr(d, 'displayName', 60)
           && (!('groupIds' in d) || (d.groupIds is list && d.groupIds.size() <= 20))
           && (!('tokens' in d) || (d.tokens is map && d.tokens.size() <= 10))
