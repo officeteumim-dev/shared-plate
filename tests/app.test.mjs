@@ -654,3 +654,92 @@ test('Daf Yomi reminder settings: same time, or a time for each day', async () =
   assert.equal(saved.days[0], '22:15');
   assert.deepEqual(errors, []);
 });
+
+test('linked family: a suggestion waits in the inbox; approving puts it on the chosen plate', async () => {
+  const { page, errors } = await open();
+  assert.match(await page.textContent('.inbox-banner'), /1 suggestion.*Grandma & Grandpa/);
+  await page.click('.inbox-banner');
+  assert.match(await page.textContent('.sugg'), /Bring the kids for lunch on Sunday/);
+  assert.equal(await page.getAttribute('.sugg [data-o=shared]', 'aria-pressed'), 'true', 'Shared by default');
+  await page.click('.sugg [data-o=leah]');
+  await page.click('.sugg [data-sugg=approve]');
+  await page.waitForFunction(() => !document.querySelector('.sheet'));
+  await page.waitForFunction(() => !document.querySelector('.inbox-banner'));
+  await page.click('[data-act=calendar]');
+  await page.click('[data-act=cal-next]'); // Sunday is next week
+  assert.match(await page.textContent('.wk-day:nth-child(1)'), /Bring the kids for lunch on Sunday[\s\S]*Leah/);
+  assert.deepEqual(errors, []);
+});
+
+test('linked family: declining removes it', async () => {
+  const { page } = await open();
+  await page.click('.inbox-banner');
+  await page.click('.sugg [data-sugg=decline]');
+  await page.waitForFunction(() => !document.querySelector('.inbox-banner'));
+});
+
+test('linked family: their shared events show on the calendar, read-only, in the family color', async () => {
+  const { page } = await open();
+  await page.click('[data-act=calendar]');
+  await page.click('[data-act=cal-next]');
+  await page.waitForFunction(() => /Grandma’s doctor visit|Grandpa’s birthday dinner/.test(document.querySelector('.week')?.textContent || ''));
+  const item = page.locator('.cal-task.linked').first();
+  assert.match(await item.textContent(), /Grandma & Grandpa/);
+  assert.equal(await item.locator('[data-act=edit]').count(), 0, 'not editable');
+  assert.match(await page.textContent('.cal-legend'), /Family/);
+});
+
+test('sending a new task to a linked family instead of a plate', async () => {
+  const { page } = await open();
+  await page.click('.fab');
+  await page.fill('#task-form [name=title]', 'Can you take the kids Thursday?');
+  await page.click('.send-fam [data-owner="family:g9"]');
+  assert.match(await page.textContent('#task-form [type=submit]'), /Send to Grandma & Grandpa/);
+  await page.click('#task-form [type=submit]');
+  await page.waitForFunction(() => /Sent to Grandma & Grandpa/.test(document.querySelector('#toast')?.textContent || ''));
+  assert.ok(!(await laneTitles(page, 'mine')).includes('Can you take the kids Thursday?'), 'not added to our own plate');
+});
+
+test('Settings: link with a family by code, choosing what they see; change and unlink', async () => {
+  const { page, errors } = await open();
+  page.on('dialog', d => d.accept());
+  await page.click('[data-act=settings]');
+  assert.match(await page.textContent('#families'), /Grandma & Grandpa/);
+  await page.click('[data-act=link-make]');
+  await page.click('.choice[data-k=share] [data-v=events]');
+  await page.click('#make-code');
+  await page.waitForSelector('#code-out .code');
+  assert.equal(await page.textContent('#code-out .code'), 'FAMLY234');
+  await page.keyboard.press('Escape');
+  await page.click('[data-act=settings]');
+  await page.click('[data-act=link-enter]');
+  await page.fill('#link-form [name=code]', 'ABCD2345');
+  await page.click('.choice[data-k=share] [data-v=calendar]');
+  await page.click('.choice[data-k=accept] [data-v=false]');
+  await page.click('#link-form [type=submit]');
+  await page.waitForFunction(() => /Linked with The Cohens/.test(document.querySelector('#toast')?.textContent || ''));
+  await page.click('[data-act=settings]');
+  assert.match(await page.textContent('#links-box'), /The Cohens[\s\S]*They see: Your whole calendar\. They can’t send you suggestions/);
+  await page.click('[data-act=link-edit][data-id=g10]');
+  await page.click('#link-remove');
+  await page.waitForFunction(() => /Unlinked from The Cohens/.test(document.querySelector('#toast')?.textContent || ''));
+  assert.deepEqual(errors, []);
+});
+
+test('a task can be marked to share with linked families once you share events', async () => {
+  const { page } = await open();
+  await page.click('.fab');
+  assert.equal(await page.locator('#task-form [name=familyShare]').count(), 0, 'hidden while sharing nothing');
+  await page.keyboard.press('Escape');
+  await page.click('[data-act=settings]');
+  await page.click('[data-act=link-edit][data-id=g9]');
+  await page.click('.choice[data-k=share] [data-v=events]');
+  await page.click('#link-save');
+  await page.waitForFunction(() => !document.querySelector('.sheet'));
+  await page.click('.fab');
+  await page.fill('#task-form [name=title]', 'Noa’s recital');
+  await page.click('#task-form details.more summary');
+  await page.check('#task-form [name=familyShare]');
+  await page.click('#task-form [type=submit]');
+  await page.waitForFunction(() => window.SP.open.some(t => t.title === 'Noa’s recital' && t.familyShare === true));
+});

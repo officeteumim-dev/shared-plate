@@ -445,3 +445,22 @@ section.lane .list + .cat-head { margin-top: 14px; }
 .day-times { display: grid; gap: 6px; }
 .day-time { display: grid; grid-template-columns: 1fr 150px; align-items: center; gap: 10px; min-height: 44px; }
 .day-time input { min-height: 44px; padding: 8px 10px; }
+
+/* ---------- Linked families ---------- */
+:root { --family: #5b6f8a; }
+.inbox-banner { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 12px; width: 100%; margin: 0 0 16px; padding: 12px 14px; min-height: 56px;
+  border: 0; border-radius: 18px; background: #e3e8f2; color: var(--ink); text-align: left; }
+.inbox-banner svg { width: 24px; height: 24px; color: var(--family); }
+.inbox-banner .go { font-weight: 700; color: var(--family); }
+.sugg { background: var(--surface); border-radius: 18px; padding: 14px; display: grid; gap: 8px; }
+.sugg-from { font-size: 14px; color: var(--family); font-weight: 700; }
+.sugg-title { font-size: 18px; font-weight: 700; }
+.sugg-note { margin: 0; white-space: pre-wrap; }
+.row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.send-fam { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: -4px; }
+.send-fam .cat-chip[aria-pressed=true] { background: var(--family); border-color: var(--family); color: #fff; }
+.choice { display: flex; flex-wrap: wrap; gap: 6px; }
+.links { list-style: none; margin: 0; padding: 0; display: grid; gap: 12px; }
+.links li { display: grid; grid-template-columns: 1fr auto; gap: 8px; align-items: start; }
+.task.cal-task.linked { background: color-mix(in srgb, var(--family) 8%, var(--surface)); }
+.task.cal-task.linked .bar { background: repeating-linear-gradient(180deg, var(--family) 0 5px, transparent 5px 8px); }

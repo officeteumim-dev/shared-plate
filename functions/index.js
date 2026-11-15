@@ -303,3 +303,154 @@ exports.claudeConnector = onRequest({ invoker: 'public', memory: '256MiB', maxIn
   res.set('Content-Type', 'application/json');
   res.status(200).send(JSON.stringify(Array.isArray(body) ? out : out[0]));
 });
+
+// ---------- Linked families ----------
+// Households can link (grandparents, say). Each side decides what the other may see and whether the other may send
+// it events and reminders, which wait in its inbox for approval. See family.js for the data shapes.
+const F = require('./family');
+const crypto = require('crypto');
+async function memberOf(req, groupId) {
+  if (!req.auth || !allowedEmail(req.auth.token)) throw new HttpsError('permission-denied', 'Sign in first.');
+  if (!/^[A-Za-z0-9]{1,40}$/.test(String(groupId || ''))) throw new HttpsError('invalid-argument', 'Which household?');
+  const g = (await db.doc(`groups/${groupId}`).get()).data();
+  if (!g || !(g.members || {})[req.auth.uid]) throw new HttpsError('permission-denied', 'You’re not in that household.');
+  return g;
+}
+// Tells everyone in a household (except one person), respecting quiet hours, Shabbos/Yom Tov and their settings.
+async function notifyHousehold(groupId, exceptUid, title, body, link, tag) {
+  const g = (await db.doc(`groups/${groupId}`).get()).data();
+  if (!g) return;
+  const now = Date.now(), stats = { sent: 0 };
+  for (const uid of Object.keys(g.members || {})) {
+    if (uid === exceptUid) continue;
+    const u = (await db.doc(`users/${uid}`).get()).data() || {};
+    if ((u.prefs || {}).family === false || L.inQuiet(u.quiet, u.tz, now) || restUntilFor(u, now)) continue;
+    await sendTo(u, uid, {
+      webpush: { notification: { title: title.slice(0, 120), body: String(body || '').slice(0, 180), icon: '/icons/icon-192.png', badge: '/icons/badge-72.png', tag },
+        fcmOptions: { link }, headers: { Urgency: 'high', TTL: '86400' } },
+      data: { kind: 'family', groupId }
+    }, stats);
+  }
+}
+const site = () => (SITE_URL.value() || `https://${process.env.GCLOUD_PROJECT}.web.app`).replace(/\/$/, '');
+const who = (g, uid) => ((g.names || {})[uid] || 'Someone');
+
+exports.makeLinkCode = onCall(async req => {
+  const { groupId } = req.data || {};
+  await memberOf(req, groupId);
+  const settings = F.cleanSettings(req.data);
+  let code;
+  for (let i = 0; i < 5; i++) {
+    code = F.linkCode(n => crypto.randomBytes(n));
+    if (!(await db.doc(`linkCodes/${code}`).get()).exists) break;
+  }
+  await db.doc(`linkCodes/${code}`).set({ groupId, ...settings, createdBy: req.auth.uid, expiresAt: TS.fromMillis(Date.now() + 7 * 864e5) });
+  return { code };
+});
+
+exports.useLinkCode = onCall(async req => {
+  const { groupId } = req.data || {};
+  const mine = await memberOf(req, groupId);
+  const code = String((req.data || {}).code || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+  const ref = db.doc(`linkCodes/${code}`);
+  const c = (await ref.get()).data();
+  if (!c || L.toMs(c.expiresAt) < Date.now()) throw new HttpsError('not-found', 'That link code didn’t work. It may have expired; ask for a new one.');
+  if (c.groupId === groupId) throw new HttpsError('invalid-argument', 'That code is from your own household.');
+  const theirs = (await db.doc(`groups/${c.groupId}`).get()).data();
+  if (!theirs) throw new HttpsError('not-found', 'That household no longer exists.');
+  const settings = F.cleanSettings(req.data);
+  const batch = db.batch();
+  // Each side also keeps a copy of the other side's choices (theirShare, theyAccept) so the app can show them.
+  batch.set(db.doc(`groups/${groupId}/links/${c.groupId}`), { name: theirs.name || 'Family', ...settings, theirShare: c.share, theyAccept: c.accept, linkedAt: FV.serverTimestamp() });
+  batch.set(db.doc(`groups/${c.groupId}/links/${groupId}`), { name: mine.name || 'Family', share: c.share, accept: c.accept, theirShare: settings.share, theyAccept: settings.accept, linkedAt: FV.serverTimestamp() });
+  batch.delete(ref);
+  await batch.commit();
+  await notifyHousehold(c.groupId, null, `Linked with ${mine.name || 'a family'}`, `${who(mine, req.auth.uid)} linked your households.`, `${site()}/`, `link-${groupId}`);
+  return { name: theirs.name || 'Family', otherId: c.groupId };
+});
+
+exports.updateLink = onCall(async req => {
+  const { groupId, otherId } = req.data || {};
+  await memberOf(req, groupId);
+  const ref = db.doc(`groups/${groupId}/links/${String(otherId || '')}`);
+  if (!(await ref.get()).exists) throw new HttpsError('not-found', 'That link is gone.');
+  const settings = F.cleanSettings(req.data);
+  await ref.update(settings);
+  await db.doc(`groups/${otherId}/links/${groupId}`).update({ theirShare: settings.share, theyAccept: settings.accept }).catch(() => {});
+  return { ok: true };
+});
+
+exports.unlink = onCall(async req => {
+  const { groupId, otherId } = req.data || {};
+  await memberOf(req, groupId);
+  const o = String(otherId || '');
+  if (!/^[A-Za-z0-9]{1,40}$/.test(o)) throw new HttpsError('invalid-argument', 'Which family?');
+  await Promise.all([db.doc(`groups/${groupId}/links/${o}`).delete(), db.doc(`groups/${o}/links/${groupId}`).delete()]);
+  return { ok: true };
+});
+
+// What each linked family shares with us, for the calendar.
+exports.linkedCalendar = onCall(async req => {
+  const { groupId } = req.data || {};
+  await memberOf(req, groupId);
+  const from = Number(req.data.from) || Date.now() - 31 * 864e5, to = Math.min(Number(req.data.to) || Date.now() + 62 * 864e5, from + 100 * 864e5);
+  const links = await db.collection(`groups/${groupId}/links`).get();
+  const out = [];
+  for (const l of links.docs) {
+    const theirSide = (await db.doc(`groups/${l.id}/links/${groupId}`).get()).data();
+    if (!theirSide || theirSide.share === 'none') continue;
+    const g = (await db.doc(`groups/${l.id}`).get()).data();
+    if (!g) continue;
+    const q = await db.collection(`groups/${l.id}/tasks`).where('status', 'in', ['open', 'snoozed']).get();
+    const tasks = q.docs.map(d => ({ id: d.id, ...d.data() }));
+    out.push({ groupId: l.id, name: g.name || l.data().name, share: theirSide.share, items: F.visibleTasks(tasks, theirSide.share, g.names || {}, L, from, to) });
+  }
+  return { families: out };
+});
+
+exports.sendSuggestion = onCall(async req => {
+  const { groupId, toGroupId } = req.data || {};
+  const mine = await memberOf(req, groupId);
+  const to = String(toGroupId || '');
+  if (!/^[A-Za-z0-9]{1,40}$/.test(to)) throw new HttpsError('invalid-argument', 'Send to which family?');
+  const [mySide, theirSide] = await Promise.all([db.doc(`groups/${groupId}/links/${to}`).get(), db.doc(`groups/${to}/links/${groupId}`).get()]);
+  if (!mySide.exists || !theirSide.exists) throw new HttpsError('not-found', 'You’re not linked with that family any more.');
+  if (!theirSide.data().accept) throw new HttpsError('permission-denied', `${mySide.data().name} isn’t taking suggestions from you.`);
+  const s = F.cleanSuggestion(req.data);
+  if (s.error) throw new HttpsError('invalid-argument', s.error);
+  const fromName = `${who(mine, req.auth.uid)} (${mine.name || 'Family'})`;
+  const ref = db.collection(`groups/${to}/inbox`).doc();
+  await ref.set({ ...s.value, dueAt: s.value.dueAt ? TS.fromMillis(s.value.dueAt) : null, fromGroup: groupId, fromUid: req.auth.uid, fromName,
+    status: 'pending', createdAt: FV.serverTimestamp() });
+  await notifyHousehold(to, null, `${fromName} suggested: ${s.value.title}`, 'Open Shared Plate to approve or decline.', `${site()}/#inbox`, `sugg-${ref.id}`);
+  return { ok: true };
+});
+
+exports.answerSuggestion = onCall(async req => {
+  const { groupId, id, decision } = req.data || {};
+  const g = await memberOf(req, groupId);
+  const ref = db.doc(`groups/${groupId}/inbox/${String(id || '').replace(/[^A-Za-z0-9]/g, '')}`);
+  const s = (await ref.get()).data();
+  if (!s || s.status !== 'pending') throw new HttpsError('failed-precondition', 'That suggestion was already answered.');
+  let taskId = null;
+  if (decision === 'approve') {
+    const owner = req.data.owner === 'shared' || (g.members || {})[req.data.owner] ? req.data.owner : 'shared';
+    const t = F.taskFromSuggestion({ ...s, dueAt: L.toMs(s.dueAt) }, owner, req.auth.uid, L, Date.now());
+    const tRef = db.collection(`groups/${groupId}/tasks`).doc();
+    await tRef.set({ ...t, dueAt: t.dueAt ? TS.fromMillis(t.dueAt) : null, notifyAt: t.notifyAt ? TS.fromMillis(t.notifyAt) : null,
+      createdAt: FV.serverTimestamp(), updatedAt: FV.serverTimestamp() });
+    taskId = tRef.id;
+  }
+  await ref.update({ status: decision === 'approve' ? 'approved' : 'declined', answeredBy: req.auth.uid, answeredAt: FV.serverTimestamp(), taskId });
+  // Let the person who sent it know.
+  const sender = s.fromUid ? (await db.doc(`users/${s.fromUid}`).get()).data() : null;
+  const now = Date.now();
+  if (sender && (sender.prefs || {}).family !== false && !L.inQuiet(sender.quiet, sender.tz, now) && !restUntilFor(sender, now)) {
+    await sendTo(sender, s.fromUid, {
+      webpush: { notification: { title: `${who(g, req.auth.uid)} ${decision === 'approve' ? 'added' : 'declined'}: ${s.title}`.slice(0, 120), body: g.name || '', icon: '/icons/icon-192.png', tag: `ans-${id}` },
+        fcmOptions: { link: `${site()}/` }, headers: { TTL: '86400' } },
+      data: { kind: 'family' }
+    }, { sent: 0 });
+  }
+  return { ok: true, taskId };
+});

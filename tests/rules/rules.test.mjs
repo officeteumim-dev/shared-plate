@@ -240,6 +240,23 @@ test('comments: members can comment on tasks and shopping items as themselves; o
   await assertSucceeds(updateDoc(doc(db.B(), 'groups', G, 'tasks', 't1'), { commentCount: 1, lastComment: 'ok', lastCommentBy: B, lastCommentAt: serverTimestamp() }));
 });
 
+test('linked families: members read links and the inbox; only the server writes them', async () => {
+  await env.withSecurityRulesDisabled(async c => {
+    await setDoc(doc(c.firestore(), 'groups', G, 'links', 'g9'), { name: 'Grandma & Grandpa', share: 'none', accept: true });
+    await setDoc(doc(c.firestore(), 'groups', G, 'inbox', 'i1'), { title: 'Dinner Friday', status: 'pending', fromGroup: 'g9' });
+  });
+  await assertSucceeds(getDoc(doc(db.B(), 'groups', G, 'links', 'g9')));
+  await assertSucceeds(getDoc(doc(db.A(), 'groups', G, 'inbox', 'i1')));
+  await assertFails(getDoc(doc(db.C(), 'groups', G, 'inbox', 'i1')));
+  await assertFails(updateDoc(doc(db.A(), 'groups', G, 'links', 'g9'), { share: 'calendar' }));
+  await assertFails(updateDoc(doc(db.A(), 'groups', G, 'inbox', 'i1'), { status: 'approved' }));
+  await assertFails(setDoc(doc(db.A(), 'groups', G, 'inbox', 'i2'), { title: 'Fake', status: 'pending' }));
+  await assertFails(getDoc(doc(db.A(), 'linkCodes', 'ABCD2345')));
+  // A task can be marked to share with linked families.
+  await assertSucceeds(updateDoc(doc(db.A(), 'groups', G, 'tasks', 't1'), { familyShare: true }));
+  await assertFails(updateDoc(doc(db.A(), 'groups', G, 'tasks', 't1'), { familyShare: 'yes' }));
+});
+
 test('anything outside groups and users is closed', async () => {
   await assertFails(setDoc(doc(db.A(), 'config', 'x'), { a: 1 }));
   await assertFails(getDoc(doc(db.A(), 'config', 'x')));
