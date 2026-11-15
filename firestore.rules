@@ -90,6 +90,16 @@ service cloud.firestore {
 
       allow delete: if allowed() && resource.data.members[me()] == 'owner';
 
+      // ---------- Linked families ----------
+      // links/{otherGroupId}: name, share, accept, linkedAt. inbox/{id}: suggestions from linked families.
+      // Members can read them; only the server (Cloud Functions) creates, changes or answers them.
+      match /links/{o} {
+        allow read: if isMember(g);
+      }
+      match /inbox/{i} {
+        allow read: if isMember(g);
+      }
+
       // ---------- Shopping list ----------
       // groups/{g}/shopping/{item}: name, list (Groceries, Amazon…), note, checked, checkedBy, checkedAt, addedBy, createdAt.
       match /shopping/{i} {
@@ -123,8 +133,10 @@ service cloud.firestore {
           return d.keys().hasOnly(['title', 'notes', 'owner', 'claimedBy', 'claimedAt', 'status', 'dueAt', 'showAgainOn',
               'repeat', 'createdBy', 'createdAt', 'updatedAt', 'completedAt', 'completedBy', 'notifyAt', 'notifyOnly',
               'notifyKind', 'nextId', 'repeatOf', 'category', 'priority', 'order',
-              'commentCount', 'lastComment', 'lastCommentBy', 'lastCommentAt', 'seenBy'])
+              'commentCount', 'lastComment', 'lastCommentBy', 'lastCommentAt', 'seenBy', 'familyShare', 'fromFamily'])
             && validCommentSummary(d)
+            && (!('familyShare' in d) || d.familyShare is bool)
+            && optStr(d, 'fromFamily', 40)
             && str(d.title, 200)
             && optStr(d, 'notes', 2000)
             && d.status in ['open', 'snoozed', 'done']

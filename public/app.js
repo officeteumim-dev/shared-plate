@@ -27,6 +27,7 @@
     gear: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3.2"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>',
     chat: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 12.5a7.5 7.5 0 0 1-10.9 6.7L4 20.5l1.4-4.4A7.5 7.5 0 1 1 20 12.5z"/></svg>',
     send: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h13M13 6l6 6-6 6"/></svg>',
+    inbox: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 13l2.5-7.5h11L20 13v5.5a1.5 1.5 0 0 1-1.5 1.5h-13A1.5 1.5 0 0 1 4 18.5z"/><path d="M4 13h4.5l1.5 2.5h4l1.5-2.5H20"/></svg>',
     cart: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 4h2.2l2.3 11.2a1.6 1.6 0 0 0 1.6 1.3h8.1a1.6 1.6 0 0 0 1.6-1.2L20.5 8H6.1"/><circle cx="9.5" cy="20" r="1.3"/><circle cx="17" cy="20" r="1.3"/></svg>',
     cal: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="5" width="17" height="15.5" rx="2.5"/><path d="M3.5 10h17M8 3v4M16 3v4"/></svg>',
     next: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg>',
@@ -54,6 +55,7 @@
   // A CSS color for whoever is responsible: a uid, or 'shared' for an unclaimed shared task.
   function personColor(key) {
     if (key === 'shared') return 'var(--shared)';
+    if (key === 'family') return 'var(--family)';
     if (key === S.uid) return 'var(--mine)';
     if (key === others()[0]) return 'var(--theirs)';
     return customColor(key) || PALETTE[(members().indexOf(key) + 5) % PALETTE.length];
@@ -151,6 +153,12 @@
       ['s4', { name: 'Phone charger', list: 'Amazon', checked: false, addedBy: me, createdAt: t0 - 26 * H }],
       ['s5', { name: 'Paper towels', list: 'Amazon', checked: false, addedBy: her, createdAt: t0 - 4 * H }]
     ]);
+    // A linked family for the preview: Grandma & Grandpa share their events with us and can send suggestions.
+    let links = [{ id: 'g9', name: 'Grandma & Grandpa', share: 'none', accept: true, theirShare: 'events', theyAccept: true }];
+    let inbox = [{ id: 'i1', fromGroup: 'g9', fromName: 'Grandma (Grandma & Grandpa)', title: 'Bring the kids for lunch on Sunday', notes: 'We’ll make the soup they like.', dueAt: at(2, 12, 30), repeat: 'none', status: 'pending', createdAt: t0 - 2 * H }];
+    let onLinks = () => {}, onInbox = () => {};
+    const emitLinks = () => setTimeout(() => onLinks(links.slice()));
+    const emitInbox = () => setTimeout(() => onInbox(inbox.filter(x => x.status === 'pending')));
     const comments = new Map(); // 'shopping/s1' → [{ id, text, by, at }]
     comments.set('shopping/s4', [{ id: 'c1', text: 'Which one? USB-C or Lightning?', by: her, at: t0 - 50 * 60000 }]);
     shop.set('s4', { ...shop.get('s4'), commentCount: 1, lastComment: 'Which one? USB-C or Lightning?', lastCommentBy: her, lastCommentAt: t0 - 50 * 60000, seenBy: {} });
@@ -180,6 +188,32 @@
       },
       watchTasks(gid, a, b) { onOpen = a; onDone = b; emit(); return () => {}; },
       watchShopping(gid, cb) { onShop = cb; emitShop(); return () => {}; },
+      watchLinks(gid, cb) { onLinks = cb; emitLinks(); return () => {}; },
+      watchInbox(gid, cb) { onInbox = cb; emitInbox(); return () => {}; },
+      // The household-to-household actions run on the server; the preview acts them out.
+      async call(name, d) {
+        if (name === 'makeLinkCode') return { code: 'FAMLY234' };
+        if (name === 'useLinkCode') { links.push({ id: 'g10', name: 'The Cohens', share: d.share, accept: d.accept, theirShare: 'none', theyAccept: true }); emitLinks(); return { name: 'The Cohens', otherId: 'g10' }; }
+        if (name === 'updateLink') { links = links.map(l => l.id === d.otherId ? { ...l, share: d.share, accept: d.accept } : l); emitLinks(); return { ok: true }; }
+        if (name === 'unlink') { links = links.filter(l => l.id !== d.otherId); emitLinks(); return { ok: true }; }
+        if (name === 'sendSuggestion') { if (!links.find(l => l.id === d.toGroupId)?.theyAccept) throw new Error('They aren’t taking suggestions.'); return { ok: true }; }
+        if (name === 'answerSuggestion') {
+          const s = inbox.find(x => x.id === d.id);
+          if (d.decision === 'approve') {
+            const nid = 'n' + (++seq);
+            tasks.set(nid, { title: s.title, notes: `${s.notes}\nFrom ${s.fromName}`, owner: d.owner, claimedBy: null, status: 'open', dueAt: s.dueAt, repeat: s.repeat, createdBy: me, createdAt: now(), fromFamily: s.fromGroup });
+            emit();
+          }
+          s.status = d.decision === 'approve' ? 'approved' : 'declined'; emitInbox(); return { ok: true };
+        }
+        if (name === 'linkedCalendar') {
+          return { families: [{ groupId: 'g9', name: 'Grandma & Grandpa', share: 'events', items: [
+            { id: 'f1', title: 'Grandpa’s birthday dinner', at: at(13, 18), who: 'Grandpa' },
+            { id: 'f2', title: 'Grandma’s doctor visit', at: at(4, 10), who: 'Grandma' }
+          ].filter(x => x.at >= d.from && x.at < d.to) }] };
+        }
+        throw new Error('Unknown action');
+      },
       setItem(gid, id, data) { shop.set(id, resolve(data)); emitShop(); return Promise.resolve(id); },
       updateItem(gid, id, patch) { shop.set(id, { ...shop.get(id), ...resolve(patch) }); emitShop(); return Promise.resolve(); },
       deleteItem(gid, id) { shop.delete(id); emitShop(); return Promise.resolve(); },
@@ -248,6 +282,17 @@
       },
       newId(gid) { return tasksCol(gid).doc().id; },
       // Shopping list: groups/<gid>/shopping/<item>, shared by the household.
+      watchLinks(gid, cb) {
+        return db.collection(`groups/${gid}/links`).onSnapshot(q => cb(q.docs.map(d => ({ id: d.id, ...snapData(d) }))), () => cb([]));
+      },
+      watchInbox(gid, cb) {
+        return db.collection(`groups/${gid}/inbox`).where('status', '==', 'pending').onSnapshot(q => cb(q.docs.map(d => ({ id: d.id, ...snapData(d) }))), () => cb([]));
+      },
+      // Linking and suggestions run on the server (they touch two households).
+      async call(name, d) {
+        const r = await firebase.app().functions('us-central1').httpsCallable(name)({ groupId: S.gid, ...d });
+        return r.data;
+      },
       watchShopping(gid, cb, onErr) {
         return db.collection('groups').doc(gid).collection('shopping').onSnapshot(q => cb(q.docs.map(d => ({ id: d.id, ...snapData(d) }))), onErr);
       },
@@ -456,7 +501,13 @@
     }, lost));
     S.unsub.push(B.watchTasks(gid, list => { S.open = list; S.loaded = true; render(); openDeepLink();
       if (S.pendingImport) { const c = S.pendingImport; S.pendingImport = null; openImport(c); } }, list => { S.done = list; if (S.view === 'done' || S.view === 'calendar') render(); }, lost));
-    S.shop = [];
+    S.shop = []; S.links = []; S.inbox = []; S.linked = null;
+    S.unsub.push(B.watchLinks(gid, l => {
+      S.links = l; S.linked = null;
+      if (S.view === 'calendar') renderCalendar();
+      const box = document.querySelector('#links-box'); if (box) box.innerHTML = linksHtml();
+    }));
+    S.unsub.push(B.watchInbox(gid, list => { S.inbox = list.sort((a, b) => (L.toMs(a.createdAt) || 0) - (L.toMs(b.createdAt) || 0)); if (S.view === 'home') render(); if (/inbox/.test(location.hash)) openDeepLink(); }));
     S.unsub.push(B.watchShopping(gid, items => { S.shop = items; if (S.view === 'shopping') renderShopping(); else if (S.view === 'home') render(); if (/shop=/.test(location.hash)) openDeepLink(); }, () => {}));
     refreshPushToken();
   }
@@ -590,6 +641,7 @@
           </div>
         </div>
       </section>
+      ${(S.inbox || []).length ? `<button class="inbox-banner" data-act="inbox">${ICON.inbox}<span><b>${S.inbox.length} ${S.inbox.length === 1 ? 'suggestion' : 'suggestions'}</b> from ${esc([...new Set(S.inbox.map(x => (S.links.find(l => l.id === x.fromGroup) || {}).name || 'family'))].join(', '))}</span><span class="go">Review</span></button>` : ''}
       ${todayN ? `<nav class="today" aria-label="Due today">${l.today.map(x => chip(x, t)).join('')}</nav>` : ''}
       ${cats.length ? `<nav class="cats" aria-label="Categories">${['', ...cats].map(c => `<button class="cat-chip" data-act="cat" data-cat="${esc(c)}" aria-pressed="${(S.cat || '').toLowerCase() === c.toLowerCase()}">${esc(c || 'All')}</button>`).join('')}</nav>` : ''}
       <div class="lanes">
@@ -714,13 +766,21 @@
       }
     }
     for (const x of S.done) { const due = L.toMs(x.dueAt); if (due != null) push(x, due, { done: true }); }
+    // What linked families share with us (loaded from the server when the calendar opens).
+    for (const fam of (S.linked && S.linked.families) || []) {
+      for (const it of fam.items) if (it.at >= from && it.at < to) out.push({ x: { id: 'fam-' + it.id, title: it.title }, at: it.at, who: 'family', linked: fam.name, person: it.who, repeat: it.repeat });
+    }
     return out.sort((a, b) => a.at - b.at);
   }
 
-  const whoName = k => k === 'shared' ? 'Shared' : k === S.uid ? 'You' : nameOf(k);
+  const whoName = k => k === 'shared' ? 'Shared' : k === 'family' ? 'Family' : k === S.uid ? 'You' : nameOf(k);
   // One task in a day's list (the agenda under the month, and each day of the week view).
   function agendaItem(it, t) {
     const at = new Date(it.at), timed = at.getHours() || at.getMinutes();
+    if (it.linked) return `<li class="row-wrap"><div class="task cal-task linked" style="--k:${personColor('family')}">
+      <span class="bar"></span>
+      <div class="body"><div class="title">${esc(it.x.title)}</div>
+        <div class="meta"><span>${esc(it.linked)}${it.person && it.person !== 'Shared' ? `, ${esc(it.person)}` : ''}</span>${timed ? `<span>${esc(L.fmtTime(it.at))}</span>` : ''}</div></div></div></li>`;
     return `<li class="row-wrap"><div class="task cal-task" style="--k:${personColor(it.who)}">
       <span class="bar"></span>
       <button class="body" data-act="edit" data-id="${esc(it.x.id)}">
@@ -766,7 +826,7 @@
         ${list.length ? `<ul class="list">${list.map(it => agendaItem(it, t)).join('')}</ul>` : ''}
       </section>`;
     }
-    const legendKeys = [S.uid, ...others(), 'shared'];
+    const legendKeys = [S.uid, ...others(), 'shared', ...((S.linked && S.linked.families || []).length ? ['family'] : [])];
     const hebRange = heb ? (() => { const a = Hb.hebrewMonthName(ws), z = Hb.hebrewMonthName(last.getTime()); return (a === z ? a : `${a} – ${z}`) + ' ' + Hb.gematria(Hb.parts(last.getTime()).year); })() : '';
     app.innerHTML = `<header class="top"><button class="icon-btn" data-act="home" aria-label="Back">${ICON.back}</button><h1>Calendar</h1>
         <button class="icon-btn" data-act="settings" aria-label="Settings">${ICON.gear}</button></header>
@@ -782,8 +842,25 @@
       <button class="fab" data-act="add-on" data-day="${weekStartOf(t) === ws ? L.startOfDay(t) : ws}" aria-label="Add a task">${ICON.plus}<span>Add</span></button>`;
   }
 
+  // Loads what linked families share with us for the months around the calendar, then redraws it.
+  function loadLinked() {
+    if (!(S.links || []).some(l => l.theirShare && l.theirShare !== 'none')) return;
+    const center = S.calDay || S.calMonth || now();
+    const from = monthStart(addMonthsTo(center, -1)), to = monthStart(addMonthsTo(center, 2));
+    if (S.linked && S.linked.from <= from && S.linked.to >= to) return;
+    if (S.linkedLoading) return;
+    S.linkedLoading = true;
+    const key = 'sp_linked_' + S.gid;
+    if (!S.linked) { try { const c = JSON.parse(localStorage.getItem(key) || 'null'); if (c) S.linked = { ...c, from: 0, to: 0 }; } catch (e) {} }
+    B.call('linkedCalendar', { from, to }).then(r => {
+      S.linked = { from, to, families: r.families || [] };
+      try { localStorage.setItem(key, JSON.stringify({ families: S.linked.families })); } catch (e) {}
+    }).catch(() => {}).finally(() => { S.linkedLoading = false; if (S.view === 'calendar') renderCalendar(); });
+  }
+
   function renderCalendar() {
     S.view = 'calendar';
+    setTimeout(loadLinked);
     if (!S.calMode) S.calMode = innerWidth < 720 ? 'week' : 'month';
     if (S.calMode === 'week') return renderWeek();
     const t = now();
@@ -808,7 +885,7 @@
         <span class="num">${d.getDate()}</span>${heb ? `<span class="hd" lang="he">${esc(Hb.dayLetters(d.getTime()))}</span>${(() => { const hs = Hb.holidays(d.getTime()).filter(h => h.kind !== 'erev'); return hs.length ? `<span class="hol-dot ${hs[0].kind}" title="${esc(hs.map(h => h.name).join(', '))}"></span><span class="hol-name ${hs[0].kind}">${esc(hs[0].name)}</span>` : ''; })()}` : ''}${showParsha && d.getDay() === 6 && Hb.parsha(d.getTime()) ? `<span class="pname">${esc(Hb.parsha(d.getTime()))}</span>` : ''}<span class="marks">${marks}${list.length > 4 ? '<b>+</b>' : ''}</span><span class="peeks">${peek}${list.length > 2 ? `<span class="more-n">+${list.length - 2}</span>` : ''}</span></button>`;
     }
     const sel = byDay[selKey] || [];
-    const legendKeys = [S.uid, ...others(), 'shared'];
+    const legendKeys = [S.uid, ...others(), 'shared', ...((S.linked && S.linked.families || []).length ? ['family'] : [])];
     const monthName = first.toLocaleDateString(undefined, { month: 'long', year: first.getFullYear() === new Date(t).getFullYear() ? undefined : 'numeric' });
     const selName = new Date(S.calDay).toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' });
     app.innerHTML = `<header class="top"><button class="icon-btn" data-act="home" aria-label="Back">${ICON.back}</button><h1>Calendar</h1>
@@ -981,6 +1058,122 @@
       <div class="chat-head"><h2>${esc(x.name)}</h2><span class="muted small">${esc(x.list)}${x.note ? `, ${esc(x.note)}` : ''}</span></div>
       ${threadHtml('shopping')}
       <button class="link" data-act="shop-edit" data-id="${esc(x.id)}">Edit or move this item</button></div>`, sheet => bindThread(sheet, 'shopping', id));
+  }
+
+  // ---------- Linked families ----------
+  const SHARE_LABEL = { none: 'Nothing', events: 'Events you share', calendar: 'Your whole calendar' };
+  function openInbox() {
+    const list = S.inbox || [];
+    if (!list.length) return toast('No suggestions waiting.');
+    const t = now();
+    openSheet(`<div class="stack">
+      <h2>Suggestions</h2>
+      <p class="muted small">From linked families. Add one to a plate, or decline it.</p>
+      ${list.map(x => `<article class="sugg" data-id="${esc(x.id)}">
+        <div class="sugg-from">${esc(x.fromName || 'A linked family')}</div>
+        <div class="sugg-title">${esc(x.title)}</div>
+        <div class="muted small">${x.dueAt ? esc(L.fmtWhen(x.dueAt, t)) : 'No date'}${L.repeatLabel(x.repeat) ? `, ${esc(L.repeatLabel(x.repeat).toLowerCase())}` : ''}</div>
+        ${x.notes ? `<p class="sugg-note">${esc(x.notes)}</p>` : ''}
+        <div class="seg sugg-owner" role="group" aria-label="Whose plate">
+          <button type="button" data-o="${esc(S.uid)}" aria-pressed="false">Me</button>
+          ${others().map(o => `<button type="button" data-o="${esc(o)}" aria-pressed="false">${esc(S.group.names?.[o] || 'Them')}</button>`).join('')}
+          <button type="button" data-o="shared" aria-pressed="true">Shared</button></div>
+        <div class="row2"><button class="btn" data-sugg="approve">Approve</button><button class="btn quiet" data-sugg="decline">Decline</button></div>
+      </article>`).join('')}</div>`, sheet => {
+      sheet.querySelectorAll('.sugg').forEach(card => {
+        let owner = 'shared';
+        card.querySelector('.sugg-owner').onclick = e => {
+          const b = e.target.closest('[data-o]'); if (!b) return;
+          owner = b.dataset.o; card.querySelectorAll('[data-o]').forEach(o => o.setAttribute('aria-pressed', o === b));
+        };
+        card.querySelectorAll('[data-sugg]').forEach(b => b.onclick = () => {
+          const decision = b.dataset.sugg;
+          card.querySelectorAll('button').forEach(x => { x.disabled = true; });
+          B.call('answerSuggestion', { id: card.dataset.id, decision, owner }).then(() => {
+            card.remove();
+            toast(decision === 'approve' ? `Added to ${owner === 'shared' ? 'Shared' : owner === S.uid ? 'your plate' : nameOf(owner) + '’s plate'}.` : 'Declined.');
+            if (!sheet.querySelector('.sugg')) closeSheet();
+          }).catch(() => { card.querySelectorAll('button').forEach(x => { x.disabled = false; }); toast('Couldn’t do that offline. Try again when you’re connected.'); });
+        });
+      });
+    });
+  }
+
+  function linkSettingsHtml(cur) {
+    const c = cur || { share: 'none', accept: true };
+    return `<div class="field"><span>What they can see of your household</span>
+        <div class="choice" data-k="share">${['none', 'events', 'calendar'].map(v => `<button type="button" class="cat-chip" data-v="${v}" aria-pressed="${c.share === v}">${SHARE_LABEL[v]}</button>`).join('')}</div>
+        <p class="muted small">“Events you share” means tasks you mark <b>Share with linked families</b>. They never see your shopping list or comments.</p></div>
+      <div class="field"><span>Can they send you events and reminders?</span>
+        <div class="choice" data-k="accept">${[[true, 'Yes, for us to approve'], [false, 'No']].map(([v, l]) => `<button type="button" class="cat-chip" data-v="${v}" aria-pressed="${c.accept === v}">${l}</button>`).join('')}</div></div>`;
+  }
+  function readLinkSettings(sheet) {
+    const pick = k => sheet.querySelector(`.choice[data-k="${k}"] [aria-pressed=true]`)?.dataset.v;
+    return { share: pick('share') || 'none', accept: pick('accept') === 'true' };
+  }
+  function bindChoices(sheet) {
+    sheet.querySelectorAll('.choice').forEach(g => g.onclick = e => {
+      const b = e.target.closest('[data-v]'); if (!b) return;
+      g.querySelectorAll('[data-v]').forEach(o => o.setAttribute('aria-pressed', o === b));
+    });
+  }
+  function linksHtml() {
+    const links = S.links || [];
+    return `${links.length ? `<ul class="links">${links.map(l => `<li><div><b>${esc(l.name)}</b>
+        <div class="muted small">They see: ${esc(SHARE_LABEL[l.share] || 'Nothing')}. ${l.accept ? 'They can send you suggestions.' : 'They can’t send you suggestions.'}</div>
+        <div class="muted small">You see: ${esc(SHARE_LABEL[l.theirShare] || 'Nothing').replace('Your whole', 'Their whole').replace('Events you share', 'Events they share')}. ${l.theyAccept ? 'You can send them suggestions.' : 'You can’t send them suggestions.'}</div></div>
+        <button class="link" data-act="link-edit" data-id="${esc(l.id)}">Change</button></li>`).join('')}</ul>`
+      : '<p class="muted small">Link with family who have their own household, like grandparents. You choose what they see, and whether they can send you events and reminders for you to approve.</p>'}
+      <div class="row2"><button class="btn quiet" data-act="link-make">Get a link code</button><button class="btn quiet" data-act="link-enter">Enter a link code</button></div>`;
+  }
+  function openLinkMake() {
+    openSheet(`<div class="stack"><h2>Link with a family</h2>
+      <p class="muted small">Choose what the other family gets, then send them the code. They enter it in their Settings and choose what you get.</p>
+      ${linkSettingsHtml()}
+      <button class="btn block" id="make-code">Make a link code</button>
+      <div id="code-out"></div></div>`, sheet => {
+      bindChoices(sheet);
+      sheet.querySelector('#make-code').onclick = async e => {
+        e.target.disabled = true;
+        try {
+          const { code } = await B.call('makeLinkCode', readLinkSettings(sheet));
+          sheet.querySelector('#code-out').innerHTML = `<div class="code">${esc(code)}</div><p class="muted small">Works for 7 days, once.</p>
+            <button class="btn quiet block" data-act="share-link-code" data-code="${esc(code)}">Share the code</button>`;
+        } catch (er) { e.target.disabled = false; toast('Couldn’t make a code offline. Try again when you’re connected.'); }
+      };
+    });
+  }
+  function openLinkEnter() {
+    openSheet(`<form class="stack" id="link-form" autocomplete="off"><h2>Enter a link code</h2>
+      <label class="field"><span>Link code</span><input type="text" name="code" maxlength="12" autocapitalize="characters" placeholder="8 letters and numbers" required></label>
+      ${linkSettingsHtml()}
+      <button class="btn block" type="submit">Link households</button></form>`, sheet => {
+      bindChoices(sheet);
+      const form = sheet.querySelector('#link-form');
+      form.onsubmit = async e => {
+        e.preventDefault();
+        const btn = form.querySelector('[type=submit]'); btn.disabled = true;
+        try {
+          const r = await B.call('useLinkCode', { code: form.code.value, ...readLinkSettings(sheet) });
+          closeSheet(); toast(`Linked with ${r.name}.`);
+        } catch (er) { btn.disabled = false; toast(er.message && !/internal/i.test(er.message) ? er.message : 'That didn’t work. Check the code and your connection.'); }
+      };
+    });
+  }
+  function openLinkEdit(id) {
+    const l = (S.links || []).find(x => x.id === id); if (!l) return;
+    openSheet(`<div class="stack"><h2>${esc(l.name)}</h2>
+      ${linkSettingsHtml(l)}
+      <button class="btn block" id="link-save">Save</button>
+      <button class="btn danger" id="link-remove">Unlink ${esc(l.name)}</button></div>`, sheet => {
+      bindChoices(sheet);
+      sheet.querySelector('#link-save').onclick = () => B.call('updateLink', { otherId: id, ...readLinkSettings(sheet) })
+        .then(() => { closeSheet(); toast('Saved.'); }).catch(() => toast('Couldn’t save that offline.'));
+      sheet.querySelector('#link-remove').onclick = () => {
+        if (!confirm(`Unlink from ${l.name}? Neither of you will see or send anything to the other.`)) return;
+        B.call('unlink', { otherId: id }).then(() => { closeSheet(); toast(`Unlinked from ${l.name}.`); }).catch(() => toast('Couldn’t unlink offline.'));
+      };
+    });
   }
 
   // =====================================================================
@@ -1262,6 +1455,9 @@
     const presetDate = !x && preset?.day ? dateStr(preset.day) : '';
     const ownerBtn = (val, label, cls) => `<button type="button" class="${cls}" style="--k:${personColor(val)}" data-owner="${esc(val)}" aria-pressed="${f.owner === val}">${esc(label)}</button>`;
     const ownerBtns = [ownerBtn(S.uid, 'Me', 'o-mine'), ...others().map(o => ownerBtn(o, S.group.names?.[o] || 'Them', 'o-theirs')), ownerBtn('shared', 'Shared', 'o-shared')].join('');
+    // New tasks can instead be sent to a linked family that takes suggestions.
+    const sendable = x ? [] : (S.links || []).filter(l => l.theyAccept);
+    const sharesEvents = (S.links || []).some(l => l.share === 'events');
     const dn = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
     const wd = f.repeat?.weekdays || (due ? [new Date(due).getDay()] : []);
     const snoozed = x && x.status === 'snoozed';
@@ -1269,6 +1465,8 @@
       <h2>${x ? 'Edit task' : 'Add a task'}</h2>
       <label class="field"><span>What needs doing?</span><input class="title-input" type="text" name="title" maxlength="200" required value="${esc(x?.title || '')}" placeholder="Call the plumber"></label>
       <div class="field"><span>Whose is it?</span><div class="seg" id="owner-seg">${ownerBtns}</div></div>
+      ${sendable.length ? `<div class="send-fam"><span class="muted small">Or send it to</span>${sendable.map(l => `<button type="button" class="cat-chip small" data-owner="family:${esc(l.id)}" aria-pressed="false">${esc(l.name)}</button>`).join('')}</div>
+        <p class="muted small fam-hint" hidden>They’ll get it as a suggestion and can add it to their plate.</p>` : ''}
       <div class="cat-prio">
         <label class="field"><span>Category</span><input type="text" name="category" maxlength="40" list="cat-list" autocomplete="off" value="${esc(x?.category || (!x && S.cat ? S.cat : ''))}" placeholder="Work, Car, House…">
           <datalist id="cat-list">${allCats().map(c => `<option value="${esc(c)}">`).join('')}</datalist></label>
@@ -1292,6 +1490,7 @@
         <div class="days" id="days" ${f.repeat?.unit === 'week' ? '' : 'hidden'}>${dn.map((d, i) => `<button type="button" data-day="${i}" aria-pressed="${wd.includes(i)}" aria-label="${['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'][i]}">${d}</button>`).join('')}</div>
       </div>
       <label class="field"><span>Note</span><textarea name="notes" maxlength="2000" placeholder="Anything the other person should know">${esc(x?.notes || '')}</textarea></label>
+      ${sharesEvents ? `<label class="toggle"><span>Share with linked families</span><input type="checkbox" name="familyShare" ${x?.familyShare ? 'checked' : ''}></label>` : ''}
       </div></details>
       <p class="err" id="task-err" hidden></p>
       <div class="actions">
@@ -1312,11 +1511,16 @@
       if (x) bindThread(sheet, 'tasks', x.id);
       const form = sheet.querySelector('#task-form');
       if (!x) setTimeout(() => form.title.focus(), 60);
-      sheet.querySelector('#owner-seg').onclick = e => {
+      const pickOwner = e => {
         const b = e.target.closest('[data-owner]'); if (!b) return;
         f.owner = b.dataset.owner;
         sheet.querySelectorAll('[data-owner]').forEach(o => o.setAttribute('aria-pressed', o === b));
+        const fam = f.owner.startsWith('family:');
+        const hint = sheet.querySelector('.fam-hint'); if (hint) hint.hidden = !fam;
+        sheet.querySelector('#task-form [type=submit]').textContent = fam ? `Send to ${(S.links.find(l => 'family:' + l.id === f.owner) || {}).name || 'family'}` : (x ? 'Save' : 'Add to the plate');
       };
+      sheet.querySelector('#owner-seg').onclick = pickOwner;
+      sheet.querySelector('.send-fam')?.addEventListener('click', pickOwner);
       sheet.querySelector('.quick-cats').onclick = e => {
         const c = e.target.closest('[data-qcat]'), p = e.target.closest('[data-qprio]');
         if (c) form.category.value = form.category.value === c.dataset.qcat ? '' : c.dataset.qcat;
@@ -1357,12 +1561,21 @@
         if (repeat !== 'none' && !dueAt) {
           const err = sheet.querySelector('#task-err'); err.hidden = false; err.textContent = 'Pick a due date so we know when it repeats.'; return;
         }
+        if (f.owner.startsWith('family:')) {
+          const to = f.owner.slice(7), fam = S.links.find(l => l.id === to);
+          const btn = form.querySelector('[type=submit]'); btn.disabled = true;
+          B.call('sendSuggestion', { toGroupId: to, title, notes: form.notes.value.trim(), dueAt, repeat: typeof repeat === 'string' ? repeat : 'none' })
+            .then(() => { closeSheet(); toast(`Sent to ${fam ? fam.name : 'them'}. They’ll approve it.`); })
+            .catch(er => { btn.disabled = false; toast(er.message && !/internal/i.test(er.message) ? er.message : 'Couldn’t send that. Check your connection and try again.'); });
+          return;
+        }
         const data = {
           title, notes: form.notes.value.trim(), owner: f.owner,
           category: form.category.value.trim().slice(0, 40), priority: form.priority.value.trim().slice(0, 3),
           claimedBy: f.owner === 'shared' ? (x?.owner === 'shared' ? (x.claimedBy || null) : null) : null,
           dueAt, repeat, updatedAt: 'NOW', notifyOnly: null, notifyKind: null
         };
+        if (form.familyShare) data.familyShare = form.familyShare.checked;
         if (x) {
           const status = x.status === 'done' ? 'done' : x.status;
           data.notifyAt = L.notifyAtFor({ ...x, ...data, status }, now());
@@ -1424,6 +1637,7 @@
         <label class="toggle"><span>When a task is due</span><input type="checkbox" id="p-due" ${p.due !== false ? 'checked' : ''}></label>
         <label class="toggle"><span>When a snoozed task comes back</span><input type="checkbox" id="p-back" ${p.back !== false ? 'checked' : ''}></label>
         <label class="toggle"><span>When someone comments</span><input type="checkbox" id="p-comments" ${p.comments !== false ? 'checked' : ''}></label>
+        <label class="toggle"><span>Linked family suggestions and answers</span><input type="checkbox" id="p-family" ${p.family !== false ? 'checked' : ''}></label>
       </section>
       <section class="settings-section" id="calendar-settings"><h3>Calendar</h3>
         ${Hb && Hb.supported ? `<label class="toggle"><span>Show Hebrew dates and holidays</span><input type="checkbox" id="p-hebrew" ${hebOn() ? 'checked' : ''}></label>
@@ -1433,6 +1647,9 @@
         <label class="toggle"><span>Show the Daf Yomi</span><input type="checkbox" id="p-daf" ${dafOn() ? 'checked' : ''}></label>
         <div id="daf-rem">${dafRemHtml()}</div>` : '<p class="muted small">This browser can’t show Hebrew dates.</p>'}
         <div id="feed-box">${feedHtml()}</div>
+      </section>
+      <section class="settings-section" id="families"><h3>Linked families</h3>
+        <div id="links-box">${linksHtml()}</div>
       </section>
       <section class="settings-section" id="claude"><h3>Connect to Claude</h3>
         <div id="claude-box">${claudeHtml()}</div>
@@ -1469,9 +1686,9 @@
     </div>`, sheet => {
       const saveQuiet = () => B.saveProfile({
         quiet: { enabled: sheet.querySelector('#q-on').checked, start: sheet.querySelector('#q-start').value || '22:00', end: sheet.querySelector('#q-end').value || '07:00' },
-        prefs: { due: sheet.querySelector('#p-due').checked, back: sheet.querySelector('#p-back').checked, comments: sheet.querySelector('#p-comments').checked }
+        prefs: { due: sheet.querySelector('#p-due').checked, back: sheet.querySelector('#p-back').checked, comments: sheet.querySelector('#p-comments').checked, family: sheet.querySelector('#p-family').checked }
       }).catch(e => fail(e, 'save quiet hours'));
-      ['#q-on', '#q-start', '#q-end', '#p-due', '#p-back', '#p-comments'].forEach(s => sheet.querySelector(s).addEventListener('change', saveQuiet));
+      ['#q-on', '#q-start', '#q-end', '#p-due', '#p-back', '#p-comments', '#p-family'].forEach(s => sheet.querySelector(s).addEventListener('change', saveQuiet));
       bindDafRem(sheet);
       [['#p-hebrew', 'hebrew'], ['#p-parsha', 'parsha'], ['#p-daf', 'daf']].forEach(([sel, key]) => sheet.querySelector(sel)?.addEventListener('change', e => {
         S.profile.prefs = { ...(S.profile.prefs || {}), [key]: e.target.checked };
@@ -1721,6 +1938,7 @@
 
   // ---------- Deep links from notifications: #task=groupId/taskId ----------
   function openDeepLink() {
+    if (/inbox/.test(location.hash) && (S.inbox || []).length) { history.replaceState(null, '', location.pathname + location.search); return openInbox(); }
     const sm = /shop=([^&]+)/.exec(location.hash);
     if (sm) {
       const [gid, iid] = decodeURIComponent(sm[1]).split('/');
@@ -1779,6 +1997,15 @@
       case 'feed-off':
         if (!confirm('Turn off this calendar link? Calendars subscribed to it will stop updating.')) return;
         return B.deleteFeed(S.profile.feedToken).then(() => { S.profile.feedToken = null; refreshFeed(); toast('Calendar link turned off.'); }).catch(er => fail(er, 'turn off the link'));
+      case 'inbox': return openInbox();
+      case 'link-make': return openLinkMake();
+      case 'link-enter': return openLinkEnter();
+      case 'link-edit': return openLinkEdit(id);
+      case 'share-link-code': {
+        const text = `Link our households on Shared Plate: Settings → Linked families → Enter a link code → ${el.dataset.code}`;
+        if (navigator.share) return navigator.share({ title: 'Shared Plate', text }).catch(() => {});
+        return navigator.clipboard?.writeText(text).then(() => toast('Copied.'), () => toast(el.dataset.code));
+      }
       case 'shopping': S.shopFilter = ''; return openView('shopping', renderShopping);
       case 'shop-toggle': {
         const x = (S.shop || []).find(i => i.id === id); if (!x) return;
