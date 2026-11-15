@@ -93,16 +93,15 @@ test('marking done moves it to Completed, and Undo brings it back', async () => 
   await page.waitForFunction(() => [...document.querySelectorAll('section.lane.mine > ul .title')].some(e => e.textContent.includes('Renew car')));
 });
 
-test('finishing a repeating task schedules the next one', async () => {
+test('finishing a weekly task: next week’s copy is only on the calendar until a day before', async () => {
   const { page } = await open();
   await page.click('section.lane.mine > ul .row-wrap:has-text("Pick up challah") [data-act=done]');
   await page.waitForFunction(() => /Next one/.test(document.querySelector('#toast')?.textContent || ''));
-  // Next week's copy isn't due for a week, so it waits in the Weekly list, not on the tile.
-  await page.waitForFunction(() => ![...document.querySelectorAll('section.lane.mine > ul .title')].some(e => e.textContent.includes('Pick up challah')));
-  const weekly = page.locator('section.lane.mine details[data-drawer="mine-weekly"]');
-  await weekly.locator('summary').click();
-  assert.match(await weekly.textContent(), /Pick up challah/);
-  assert.doesNotMatch(await weekly.textContent(), /Today|Overdue/);
+  await page.waitForFunction(() => ![...document.querySelectorAll('section.lane.mine .title')].some(e => e.textContent.includes('Pick up challah')));
+  assert.equal(await page.locator('section.lane.mine details').filter({ hasText: 'Pick up challah' }).count(), 0, 'not in any dropdown either');
+  await page.click('[data-act=calendar]');
+  await page.click('[data-act=cal-next]');
+  assert.match(await page.textContent('.wk-day:nth-child(6)'), /Pick up challah/, 'next Friday on the calendar');
 });
 
 test('swiping a task to the right marks it done', async () => {
@@ -464,24 +463,28 @@ test('a wide screen opens the calendar to the month', async () => {
 });
 
 
-test('weekly tasks are always in the Weekly list, and on the tile from a day before they are due', async () => {
-  const { page, errors } = await open(); // Friday 9am: challah due today 3pm (on the tile)
+test('a weekly task is on the tile from a day before it is due', async () => {
+  const { page, errors } = await open(); // Friday 9am: challah due today 3pm
   assert.ok((await laneTitles(page, 'mine')).includes('Pick up challah'));
-  assert.match(await page.textContent('section.lane.mine details[data-drawer="mine-weekly"] summary'), /Weekly list\s*1/);
+  assert.equal(await page.locator('[data-drawer$="-weekly"]').count(), 0, 'no Weekly list dropdown');
   assert.deepEqual(errors, []);
 });
 
-test('a weekly task due in two days waits in the Weekly list', async () => {
+test('a weekly task due in two days is only on the calendar', async () => {
   const { page } = await open({ at: '2026-11-07T09:00:00-05:00' }); // Saturday 9am; the new task is due Monday 6pm
   await page.click('.fab');
-  await page.fill('#task-form [name=title]', 'Water the garden');
+  await page.fill('#task-form [name=title]', 'Take out the garbage');
   await page.click('#task-form details.more summary');
   await page.fill('#task-form [name=date]', '2026-11-09');
   await page.fill('#task-form [name=time]', '18:00');
   await page.selectOption('#task-form [name=repeat]', 'weekly');
   await page.click('#task-form [type=submit]');
-  await page.waitForFunction(() => document.querySelector('section.lane.mine [data-drawer="mine-weekly"]')?.textContent.includes('Water the garden'));
-  assert.ok(!(await laneTitles(page, 'mine')).includes('Water the garden'));
+  await page.waitForTimeout(200);
+  assert.ok(!(await laneTitles(page, 'mine')).includes('Take out the garbage'));
+  assert.doesNotMatch(await page.textContent('section.lane.mine'), /Take out the garbage/);
+  await page.click('[data-act=calendar]');
+  await page.click('[data-act=cal-next]');
+  assert.match(await page.textContent('.wk-day:nth-child(2)'), /Take out the garbage/);
 });
 
 
@@ -564,4 +567,29 @@ test('comments on a task live in its edit sheet and show on the row', async () =
   await page.waitForFunction(() => document.querySelectorAll('#msgs .msg.mine').length === 1);
   await page.keyboard.press('Escape');
   assert.match(await page.textContent('section.lane.mine > ul .row-wrap:has-text("Renew car registration") .meta'), /1 comment/);
+});
+
+
+test('on a touch screen the handle must be held before a task moves; a quick swipe does nothing', async () => {
+  const { page } = await open();
+  const order = () => page.$$eval('ul[data-sortable="mine/Car"] .title', els => els.map(e => e.lastChild.textContent.trim()));
+  const drag = holdMs => page.evaluate(async hold => {
+    const grip = document.querySelector('ul[data-sortable="mine/Car"] li:nth-child(2) .grip');
+    const r = grip.getBoundingClientRect(), x = r.left + r.width / 2;
+    let y = r.top + r.height / 2;
+    const fire = (type, yy) => {
+      const t = new Touch({ identifier: 7, target: grip, clientX: x, clientY: yy });
+      grip.dispatchEvent(new TouchEvent(type, { touches: type === 'touchend' ? [] : [t], changedTouches: [t], bubbles: true, cancelable: true }));
+    };
+    fire('touchstart', y);
+    await new Promise(res => setTimeout(res, hold));
+    for (let i = 0; i < 8; i++) { y -= 12; fire('touchmove', y); }
+    fire('touchend', y);
+    await new Promise(res => setTimeout(res, 150));
+  }, holdMs);
+  assert.deepEqual(await order(), ['Renew car registration', 'Rotate the tires']);
+  await drag(50); // a quick swipe over the handle
+  assert.deepEqual(await order(), ['Renew car registration', 'Rotate the tires'], 'nothing moved');
+  await drag(600); // press and hold, then drag up
+  await page.waitForFunction(() => document.querySelector('ul[data-sortable="mine/Car"] li .title')?.textContent.includes('Rotate the tires'));
 });

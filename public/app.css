@@ -299,7 +299,10 @@ section.lane .list + .cat-head { margin-top: 14px; }
 .prio.p3 { background: #dfe6f1; color: #36507a; }
 .cat-chip .prio { margin: 0; }
 .task { grid-template-columns: 48px 1fr auto auto; }
-.grip { width: 44px; height: 48px; margin-right: -8px; border: 0; background: none; color: var(--ink-2); opacity: .55; display: grid; place-items: center; touch-action: none; cursor: grab; border-radius: 10px; }
+.grip { width: 44px; height: 48px; margin-right: -8px; border: 0; background: none; color: var(--ink-2); opacity: .55; display: grid; place-items: center; touch-action: pan-y; cursor: grab; border-radius: 10px;
+  -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; transition: background .45s, opacity .2s; }
+/* While the handle is held, it fills in to show the task is about to lift. */
+.grip.holding { opacity: 1; background: color-mix(in srgb, var(--k) 22%, transparent); }
 .grip svg { width: 18px; height: 18px; }
 .grip:active { opacity: 1; cursor: grabbing; }
 .list > li { transition: transform .15s ease; }

@@ -81,7 +81,7 @@
   const isDaily = x => { const r = L.normRepeat(x.repeat); return !!r && r.unit === 'day' && r.every === 1; };
   // Daily tasks come onto the tile 3 hours before they're due (and stay while overdue); the "Daily list" always has them.
   const DAILY_LEAD = 3 * H;
-  // Weekly tasks work the same way: always in the "Weekly list", and on the tile from a day before they're due.
+  // Weekly tasks come onto the tile a day before they're due; until then they're only on the calendar.
   const isWeekly = x => { const r = L.normRepeat(x.repeat); return !!r && r.unit === 'week'; };
   const WEEKLY_LEAD = 24 * H;
   const recurLead = x => (isDaily(x) ? DAILY_LEAD : isWeekly(x) ? WEEKLY_LEAD : null);
@@ -632,7 +632,8 @@
   }
 
   function lane(k, title, all, t, empty, snoozed) {
-    const daily = all.filter(isDaily), weekly = all.filter(isWeekly);
+    const daily = all.filter(isDaily);
+    const waiting = all.filter(x => isWeekly(x) && !dailyShowing(x, t)); // weekly tasks not due within a day: only on the calendar
     const far = all.filter(x => recurLead(x) == null && farOut(x, t));
     const list = all.filter(x => (recurLead(x) != null ? dailyShowing(x, t) : !farOut(x, t)));
     const open = S.openDrawers || (S.openDrawers = new Set());
@@ -641,14 +642,13 @@
         <ul class="list">${items.map(x => row(x, t, k, snz)).join('')}</ul></details>` : '';
     return `<section class="lane ${k}" aria-label="${esc(title)}">
       <div class="lane-head"><h3>${esc(title)}</h3><span class="count">${list.length}</span></div>
-      ${!list.length ? `<div class="empty">${esc(S.cat ? `Nothing in ${S.cat} here.` : daily.length || weekly.length || far.length || snoozed.length ? 'Nothing due right now.' : empty)}</div>`
+      ${!list.length ? `<div class="empty">${esc(S.cat ? `Nothing in ${S.cat} here.` : daily.length || waiting.length || far.length || snoozed.length ? 'Nothing due right now.' : empty)}</div>`
         : (() => {
           const groups = L.byCategory(list);
           const named = groups.some(g => g.name) && !S.cat;
           return groups.map(g => `${named ? `<h4 class="cat-head">${esc(g.name || 'Other')}</h4>` : ''}<ul class="list" data-sortable="${esc(k + '/' + g.name)}">${g.items.map(x => row(x, t, k, false, true)).join('')}</ul>`).join('');
         })()}
       ${drawer('daily', 'Daily list', daily, false)}
-      ${drawer('weekly', 'Weekly list', weekly, false)}
       ${drawer('far', 'More than 2 weeks out', far, false)}
       ${drawer('snoozed', 'Snoozed', snoozed, true)}
     </section>`;
@@ -1067,40 +1067,65 @@
   function bindReorder() {
     app.querySelectorAll('ul[data-sortable]').forEach(ul => {
       ul.querySelectorAll('.grip').forEach(grip => {
-        grip.addEventListener('pointerdown', e => {
-          if (e.button) return;
-          e.preventDefault();
+        // Picks up a task and returns handlers to move it and drop it.
+        const startDrag = y0 => {
           const li = grip.closest('li'), items = [...ul.children];
-          if (items.length < 2) return;
+          if (items.length < 2) return null;
           const from = items.indexOf(li), rects = items.map(i => i.getBoundingClientRect());
           const step = rects.length > 1 ? rects[1].top - rects[0].top : li.offsetHeight + 8;
-          const y0 = e.clientY; let to = from;
-          try { grip.setPointerCapture(e.pointerId); } catch (er) {}
+          let to = from;
           li.classList.add('lifted');
-          const move = ev => {
-            const dy = ev.clientY - y0;
-            li.style.transform = `translateY(${dy}px)`;
-            const mid = rects[from].top + rects[from].height / 2 + dy;
-            // The new position is how many of the other tasks now sit above the dragged one.
-            to = rects.filter((r, i) => i !== from && r.top + r.height / 2 < mid).length;
-            items.forEach((it, i) => {
-              if (it === li) return;
-              const shift = from < to && i > from && i <= to ? -step : from > to && i >= to && i < from ? step : 0;
-              it.style.transform = shift ? `translateY(${shift}px)` : '';
-            });
+          if (navigator.vibrate) navigator.vibrate(12);
+          return {
+            move(y) {
+              const dy = y - y0;
+              li.style.transform = `translateY(${dy}px)`;
+              const mid = rects[from].top + rects[from].height / 2 + dy;
+              // The new position is how many of the other tasks now sit above the dragged one.
+              to = rects.filter((r, i) => i !== from && r.top + r.height / 2 < mid).length;
+              items.forEach((it, i) => {
+                if (it === li) return;
+                const shift = from < to && i > from && i <= to ? -step : from > to && i >= to && i < from ? step : 0;
+                it.style.transform = shift ? `translateY(${shift}px)` : '';
+              });
+            },
+            end() {
+              items.forEach(it => { it.style.transform = ''; }); li.classList.remove('lifted');
+              if (to === from) return;
+              const ids = items.map(i => i.dataset.id);
+              const current = Object.fromEntries(ids.map(id => [id, findTask(id)?.order]));
+              for (const [id, order] of Object.entries(L.reorder(ids, from, to, current))) B.updateTask(S.gid, id, { order, updatedAt: 'NOW' });
+            }
           };
-          const up = () => {
-            grip.removeEventListener('pointermove', move); grip.removeEventListener('pointerup', up); grip.removeEventListener('pointercancel', up);
-            items.forEach(it => { it.style.transform = ''; }); li.classList.remove('lifted');
-            if (to === from) return;
-            const ids = items.map(i => i.dataset.id);
-            const current = Object.fromEntries(ids.map(id => [id, findTask(id)?.order]));
-            const changes = L.reorder(ids, from, to, current);
-            for (const [id, order] of Object.entries(changes)) B.updateTask(S.gid, id, { order, updatedAt: 'NOW' });
-            if (navigator.vibrate) navigator.vibrate(8);
-          };
+        };
+        // Mouse: drag straight away.
+        grip.addEventListener('pointerdown', e => {
+          if (e.pointerType !== 'mouse' || e.button) return;
+          e.preventDefault();
+          const d = startDrag(e.clientY); if (!d) return;
+          try { grip.setPointerCapture(e.pointerId); } catch (er) {}
+          const move = ev => d.move(ev.clientY);
+          const up = () => { grip.removeEventListener('pointermove', move); grip.removeEventListener('pointerup', up); grip.removeEventListener('pointercancel', up); d.end(); };
           grip.addEventListener('pointermove', move); grip.addEventListener('pointerup', up); grip.addEventListener('pointercancel', up);
         });
+        // Touch: press and hold the handle (about half a second) before the task lifts, so scrolling past it never moves anything.
+        const HOLD = 450, SLOP = 10;
+        let timer = null, drag = null, x0 = 0, y0 = 0;
+        const reset = () => { clearTimeout(timer); timer = null; if (drag) { drag.end(); drag = null; } grip.classList.remove('holding'); };
+        grip.addEventListener('touchstart', e => {
+          if (e.touches.length !== 1) return reset();
+          const t = e.touches[0]; x0 = t.clientX; y0 = t.clientY;
+          grip.classList.add('holding');
+          timer = setTimeout(() => { timer = null; grip.classList.remove('holding'); drag = startDrag(y0); }, HOLD);
+        }, { passive: true });
+        grip.addEventListener('touchmove', e => {
+          const t = e.touches[0];
+          if (drag) { e.preventDefault(); drag.move(t.clientY); return; }
+          if (timer && (Math.abs(t.clientX - x0) > SLOP || Math.abs(t.clientY - y0) > SLOP)) { clearTimeout(timer); timer = null; grip.classList.remove('holding'); }
+        }, { passive: false });
+        grip.addEventListener('touchend', reset);
+        grip.addEventListener('touchcancel', reset);
+        grip.addEventListener('contextmenu', e => e.preventDefault());
         // Keyboard: arrow keys move the task up or down.
         grip.addEventListener('keydown', e => {
           if (e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return;
