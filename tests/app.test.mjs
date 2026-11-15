@@ -620,3 +620,37 @@ test('marking a repeating task not done removes the next copy it created', async
   const copies = await page.locator('.wk-day:nth-child(6) .title:has-text("Pick up challah")').count();
   assert.equal(copies, 1, 'just the projected repeat of the reopened task, not a second copy');
 });
+
+test('Daf Yomi reminder settings: same time, or a time for each day', async () => {
+  const { page, errors } = await open();
+  await page.click('[data-act=settings]');
+  await page.check('#p-hebrew');
+  assert.match(await page.textContent('.shabbos-note'), /no notifications on Shabbos or Yom Tov/);
+  assert.equal(await page.locator('#daf-on').count(), 0, 'only once Daf Yomi is shown');
+  await page.check('#p-daf');
+  await page.check('#daf-on');
+  assert.equal(await page.inputValue('#daf-time'), '21:00');
+  await page.fill('#daf-time', '06:30');
+  await page.dispatchEvent('#daf-time', 'change');
+  await page.click('[data-daf-mode=days]');
+  assert.equal(await page.locator('.day-time input').count(), 6, 'no time for Shabbos when Hebrew dates are on');
+  assert.match(await page.textContent('.day-times'), /No reminder on Shabbos/);
+  assert.equal(await page.inputValue('.day-time input[data-day="3"]'), '06:30', 'each day starts at the same time');
+  await page.fill('.day-time input[data-day="5"]', '');
+  await page.dispatchEvent('.day-time input[data-day="5"]', 'change');
+  assert.match(await page.textContent('#daf-rem'), /None are sent on Shabbos or Yom Tov/);
+  // Back to one time, change it, then to different days again: every day starts from the new time.
+  await page.click('[data-daf-mode=same]');
+  await page.fill('#daf-time', '22:15');
+  await page.dispatchEvent('#daf-time', 'change');
+  await page.click('[data-daf-mode=days]');
+  assert.equal(await page.inputValue('.day-time input[data-day="5"]'), '22:15');
+  await page.fill('.day-time input[data-day="5"]', '');
+  await page.dispatchEvent('.day-time input[data-day="5"]', 'change');
+  const saved = await page.evaluate(() => window.SP.profile.prefs.dafReminder);
+  assert.equal(saved.enabled, true);
+  assert.equal(saved.same, false);
+  assert.equal(saved.days[5], '');
+  assert.equal(saved.days[0], '22:15');
+  assert.deepEqual(errors, []);
+});

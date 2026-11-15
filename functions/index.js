@@ -4,7 +4,7 @@
 // - joinGroup: joins a group with its invite code (the code is checked here, so non-members never read groups).
 // - calendarFeed: a private .ics feed of scheduled tasks (/cal/<token>.ics) for Google Calendar or Apple Calendar.
 // - claudeConnector: each person's private Claude connector (/mcp/<token>), to add and manage tasks from Claude.
-// Deployed by GitHub Actions (.github/workflows/deploy.yml). public/logic.js is copied in on deploy.
+// Deployed by GitHub Actions (.github/workflows/deploy.yml). public/logic.js and public/hebrew.js are copied in on deploy.
 'use strict';
 const { setGlobalOptions } = require('firebase-functions/v2');
 const { onCall, onRequest, HttpsError } = require('firebase-functions/v2/https');
@@ -16,6 +16,10 @@ const { buildIcs } = require('./ics');
 const mcp = require('./mcp');
 let L;
 try { L = require('./logic'); } catch (e) { L = require('../public/logic.js'); }
+let Hb;
+try { Hb = require('./hebrew'); } catch (e) { Hb = require('../public/hebrew.js'); }
+// People who turned on the Jewish calendar get no notifications on Shabbos or Yom Tov: when they may get them again.
+const restUntilFor = (user, now) => ((user && user.prefs && user.prefs.hebrew === true && Hb.supported) ? Hb.restUntil(now, user.tz || 'America/New_York') : null);
 
 admin.initializeApp();
 const db = admin.firestore();
@@ -126,7 +130,7 @@ async function notifyComment(groupId, kind, itemId, commentId, callerUid) {
   for (const uid of Object.keys(group.members)) {
     if (uid === callerUid) continue;
     const u = (await db.doc(`users/${uid}`).get()).data() || {};
-    if ((u.prefs || {}).comments === false || L.inQuiet(u.quiet, u.tz, now)) continue;
+    if ((u.prefs || {}).comments === false || L.inQuiet(u.quiet, u.tz, now) || restUntilFor(u, now)) continue;
     await sendTo(u, uid, msg, stats);
   }
   return { sent: stats.sent };
@@ -137,14 +141,41 @@ exports.notifyComment = onCall(async req => {
   return notifyComment(String(d.groupId || ''), String(d.kind || ''), String(d.itemId || ''), String(d.commentId || ''), req.auth.uid);
 });
 
+// ---------- Daf Yomi reminders ----------
+// Settings → Calendar → Daily Daf Yomi reminder: prefs.dafReminder { enabled, same, time, days }. Sent once a day in
+// the half hour after the chosen time (users.dafSentOn remembers the date). Never on Shabbos or Yom Tov.
+async function sendDafReminders(now, stats) {
+  const q = await db.collection('users').where('prefs.dafReminder.enabled', '==', true).limit(500).get();
+  const siteUrl = SITE_URL.value() || `https://${process.env.GCLOUD_PROJECT}.web.app`;
+  for (const d of q.docs) {
+    const u = d.data(), tz = u.tz || 'America/New_York';
+    const date = L.dafReminderDue(u.prefs.dafReminder, tz, now, u.dafSentOn);
+    if (!date) continue;
+    await d.ref.update({ dafSentOn: date });
+    if (restUntilFor(u, now)) continue; // Shabbos or Yom Tov: skip today's reminder
+    const [y, m, dd] = date.split('-').map(Number);
+    const daf = Hb.dafYomi(new Date(y, m - 1, dd, 12).getTime());
+    await sendTo(u, d.id, {
+      webpush: {
+        notification: { title: `Daf Yomi: ${daf.masechta} ${daf.daf}`, body: 'Today’s daf', icon: '/icons/icon-192.png', badge: '/icons/badge-72.png', tag: `daf-${date}` },
+        fcmOptions: { link: `${siteUrl.replace(/\/$/, '')}/` },
+        headers: { Urgency: 'normal', TTL: '21600' }
+      },
+      data: { kind: 'daf', date }
+    }, stats);
+    stats.daf++;
+  }
+}
+
 exports.sendReminders = onSchedule({ schedule: 'every 5 minutes', timeoutSeconds: 120 }, async () => {
   const now = Date.now();
+  const stats = { tasks: 0, sent: 0, daf: 0 };
+  await sendDafReminders(now, stats).catch(e => logger.error('Daf reminders failed', { err: e.message }));
   const due = await db.collectionGroup('tasks').where('notifyAt', '<=', TS.fromMillis(now)).orderBy('notifyAt').limit(300).get();
-  if (due.empty) return;
+  if (due.empty) { if (stats.daf) logger.info('Reminders', stats); return; }
   const groups = new Map(), users = new Map();
   const getGroup = async id => { if (!groups.has(id)) groups.set(id, (await db.doc(`groups/${id}`).get()).data() || null); return groups.get(id); };
   const getUser = async id => { if (!users.has(id)) users.set(id, (await db.doc(`users/${id}`).get()).data() || {}); return users.get(id); };
-  const stats = { tasks: 0, sent: 0 };
   const siteUrl = SITE_URL.value() || `https://${process.env.GCLOUD_PROJECT}.web.app`;
 
   for (const d of due.docs) {
@@ -154,7 +185,7 @@ exports.sendReminders = onSchedule({ schedule: 'every 5 minutes', timeoutSeconds
       if (!group) { await d.ref.update({ notifyAt: null }); continue; }
       const people = {};
       for (const uid of Object.keys(group.members || {})) people[uid] = await getUser(uid);
-      const plan = L.planReminder(task, group, people, now);
+      const plan = L.planReminder(task, group, people, now, restUntilFor);
       for (const s of plan.send) await sendTo(people[s.uid], s.uid, message(task, s.kind, group.name, siteUrl, groupId, d.id), stats);
       const upd = { ...plan.update };
       if (typeof upd.notifyAt === 'number') upd.notifyAt = TS.fromMillis(upd.notifyAt);
