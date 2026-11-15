@@ -684,8 +684,8 @@
     app.innerHTML = `<header class="top"><button class="icon-btn" data-act="home" aria-label="Back">${ICON.back}</button><h1>Completed</h1><span style="width:48px"></span></header>
       <p class="muted">The last ${S.done.length || 'few'} things you finished. Tap Undo to put one back.</p>
       ${S.done.length ? `<ul class="list done-list">${S.done.map(x => `<li class="row-wrap lane ${L.laneOf(x, S.uid)}"><div class="task">
-        <div class="body"><div class="title">${esc(x.title)}</div>
-        <div class="meta"><span>${esc(nameOf(x.completedBy))} finished it ${esc(L.fmtWhen(x.completedAt, t))}</span></div></div>
+        <button class="body" data-act="edit" data-id="${esc(x.id)}"><div class="title">${esc(x.title)}</div>
+        <div class="meta"><span>${esc(nameOf(x.completedBy))} finished it ${esc(L.fmtWhen(x.completedAt, t))}</span></div></button>
         <button class="btn quiet" style="min-height:44px" data-act="undo" data-id="${esc(x.id)}">Undo</button></div></li>`).join('')}</ul>`
         : '<div class="empty">Nothing finished yet. Swipe a task to the right, or tap its circle, to mark it done.</div>'}`;
   }
@@ -1296,8 +1296,10 @@
       <p class="err" id="task-err" hidden></p>
       <div class="actions">
         <button class="btn block" type="submit">${x ? 'Save' : 'Add to the plate'}</button>
-        ${x ? `<div class="row"><button type="button" class="btn quiet" data-act="done-from-sheet">Mark done</button>
-          ${snoozed ? '<button type="button" class="btn quiet" data-act="unsnooze">Bring back now</button>' : '<button type="button" class="btn quiet" data-act="snooze-menu">Snooze</button>'}</div>
+        ${x ? `${x.status === 'done'
+          ? `<p class="muted small">${esc(nameOf(x.completedBy))} finished this ${esc(L.fmtWhen(x.completedAt, t))}.</p><button type="button" class="btn quiet block" data-act="undone-from-sheet">Mark not done</button>`
+          : `<div class="row"><button type="button" class="btn quiet" data-act="done-from-sheet">Mark done</button>
+          ${snoozed ? '<button type="button" class="btn quiet" data-act="unsnooze">Bring back now</button>' : '<button type="button" class="btn quiet" data-act="snooze-menu">Snooze</button>'}</div>`}
           <div id="snooze-opts" class="snooze-opts" hidden>
             <button type="button" class="btn line" data-snooze="${at8(t + DAYMS)}">Tomorrow</button>
             <button type="button" class="btn line" data-snooze="${at8(t + ((6 - new Date(t).getDay() + 7) % 7 || 7) * DAYMS)}">Saturday</button>
@@ -1329,6 +1331,7 @@
       sheet.querySelectorAll('[data-snooze]').forEach(b => { b.onclick = () => snooze(x.id, +b.dataset.snooze); });
       sheet.querySelector('#snooze-date')?.addEventListener('change', e => { if (e.target.value) snooze(x.id, at8(new Date(e.target.value + 'T00:00').getTime())); });
       sheet.querySelector('[data-act=done-from-sheet]')?.addEventListener('click', () => { closeSheet(); markDone(x.id); });
+      sheet.querySelector('[data-act=undone-from-sheet]')?.addEventListener('click', () => { closeSheet(); undoDone(x.id); });
       sheet.querySelector('[data-act=unsnooze]')?.addEventListener('click', () => unsnooze(x.id));
       sheet.querySelector('[data-act=delete]')?.addEventListener('click', () => {
         const keep = { ...x, createdBy: S.uid, createdAt: 'NOW' }; delete keep.id;
