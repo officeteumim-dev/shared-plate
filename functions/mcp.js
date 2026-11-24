@@ -383,4 +383,4 @@ async function handleMessage(msg, ctx) {
   }
 }
 
-module.exports = { handleMessage, callTool, parseWhen, TOOLS, SUPPORTED };
+module.exports = { handleMessage, callTool, parseWhen, TOOLS, SUPPORTED, UserError };

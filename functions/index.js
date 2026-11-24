@@ -245,25 +245,17 @@ function toFirestore(d) {
   }
   return o;
 }
-exports.claudeConnector = onRequest({ invoker: 'public', memory: '256MiB', maxInstances: 3 }, async (req, res) => {
-  res.set('Cache-Control', 'no-store');
-  const m = /\/mcp\/([A-Za-z0-9_-]{24,64})\/?$/.exec(req.path || '');
-  if (!m) { res.status(404).json({ error: 'Not found' }); return; }
-  if (req.method !== 'POST') { res.set('Allow', 'POST'); res.status(405).send('Use POST'); return; }
-  const link = (await db.doc(`connectors/${m[1]}`).get()).data();
-  if (!link) { res.status(404).json({ error: 'This Claude link was turned off. Make a new one in Shared Plate → Settings.' }); return; }
-  const group = (await db.doc(`groups/${link.groupId}`).get()).data();
-  if (!group || !(group.members || {})[link.uid]) { res.status(403).json({ error: 'You are no longer in this household.' }); return; }
-  const user = (await db.doc(`users/${link.uid}`).get()).data() || {};
-  const col = db.collection(`groups/${link.groupId}/tasks`);
-  const shop = db.collection(`groups/${link.groupId}/shopping`);
+// What the Claude connector and the in-app assistant act through: a person's view of their household.
+function toolContext(groupId, uid, group, user) {
+  const col = db.collection(`groups/${groupId}/tasks`);
+  const shop = db.collection(`groups/${groupId}/shopping`);
   const fromDoc = d => {
     const t = { id: d.id, ...d.data() };
     for (const k of TIME_KEYS) if (t[k] && t[k].toMillis) t[k] = t[k].toMillis();
     return t;
   };
-  const ctx = {
-    uid: link.uid, group, tz: user.tz || 'America/New_York', now: Date.now(), L,
+  return {
+    uid, group, tz: user.tz || 'America/New_York', now: Date.now(), L,
     store: {
       async list() {
         const [open, done] = await Promise.all([
@@ -281,20 +273,33 @@ exports.claudeConnector = onRequest({ invoker: 'public', memory: '256MiB', maxIn
       async shopUpdate(id, patch) { await shop.doc(id).update(toFirestore(patch)); },
       async shopDelete(id) { await shop.doc(id).delete(); },
       async comments(kind, id) {
-        const q = await db.collection(`groups/${link.groupId}/${kind}/${id}/comments`).orderBy('at').limit(50).get();
+        const q = await db.collection(`groups/${groupId}/${kind}/${id}/comments`).orderBy('at').limit(50).get();
         return q.docs.map(fromDoc).map(c => ({ ...c, at: c.at && c.at.toMillis ? c.at.toMillis() : c.at }));
       },
       async addComment(kind, id, text) {
-        const ref = db.collection(`groups/${link.groupId}/${kind}/${id}/comments`).doc();
-        await ref.set({ text, by: link.uid, at: FV.serverTimestamp() });
-        await db.doc(`groups/${link.groupId}/${kind}/${id}`).update({
-          commentCount: FV.increment(1), lastComment: text.slice(0, 200), lastCommentBy: link.uid, lastCommentAt: FV.serverTimestamp(),
-          [`seenBy.${link.uid}`]: Date.now()
+        const ref = db.collection(`groups/${groupId}/${kind}/${id}/comments`).doc();
+        await ref.set({ text, by: uid, at: FV.serverTimestamp() });
+        await db.doc(`groups/${groupId}/${kind}/${id}`).update({
+          commentCount: FV.increment(1), lastComment: text.slice(0, 200), lastCommentBy: uid, lastCommentAt: FV.serverTimestamp(),
+          [`seenBy.${uid}`]: Date.now()
         });
-        await notifyComment(link.groupId, kind, id, ref.id, link.uid).catch(e => logger.warn('comment push failed', e.message));
+        await notifyComment(groupId, kind, id, ref.id, uid).catch(e => logger.warn('comment push failed', e.message));
       }
     }
   };
+}
+
+exports.claudeConnector = onRequest({ invoker: 'public', memory: '256MiB', maxInstances: 3 }, async (req, res) => {
+  res.set('Cache-Control', 'no-store');
+  const m = /\/mcp\/([A-Za-z0-9_-]{24,64})\/?$/.exec(req.path || '');
+  if (!m) { res.status(404).json({ error: 'Not found' }); return; }
+  if (req.method !== 'POST') { res.set('Allow', 'POST'); res.status(405).send('Use POST'); return; }
+  const link = (await db.doc(`connectors/${m[1]}`).get()).data();
+  if (!link) { res.status(404).json({ error: 'This Claude link was turned off. Make a new one in Shared Plate → Settings.' }); return; }
+  const group = (await db.doc(`groups/${link.groupId}`).get()).data();
+  if (!group || !(group.members || {})[link.uid]) { res.status(403).json({ error: 'You are no longer in this household.' }); return; }
+  const user = (await db.doc(`users/${link.uid}`).get()).data() || {};
+  const ctx = toolContext(link.groupId, link.uid, group, user);
   const body = req.body;
   const msgs = Array.isArray(body) ? body : [body];
   const out = [];
@@ -453,4 +458,40 @@ exports.answerSuggestion = onCall(async req => {
     }, { sent: 0 });
   }
   return { ok: true, taskId };
+});
+
+// ---------- In-app assistant ----------
+// The chat line in the app: Claude, acting as the person chatting, with the same tools as the Claude connector.
+// Needs an Anthropic API key: the ANTHROPIC_API_KEY GitHub secret, which the deploy writes into functions/.env.
+// Until it's there, the app says the assistant isn't set up. ASSISTANT_MODEL in .env overrides the model.
+const Assistant = require('./assistant');
+const recentAsks = new Map(); // uid → recent request times (per instance), a simple brake on runaway use
+
+exports.assistant = onCall({ timeoutSeconds: 120, memory: '256MiB' }, async req => {
+  const d = req.data || {};
+  const group = await memberOf(req, d.groupId);
+  const key = process.env.ANTHROPIC_API_KEY;
+  if (!key) return { notSetUp: true };
+  const uid = req.auth.uid, t = Date.now();
+  const recent = (recentAsks.get(uid) || []).filter(x => t - x < 60 * 60 * 1000);
+  if (recent.length >= 60) throw new HttpsError('resource-exhausted', 'That’s a lot of messages this hour. Try again in a little while.');
+  recentAsks.set(uid, [...recent, t]);
+  const user = (await db.doc(`users/${uid}`).get()).data() || {};
+  const ctx = toolContext(d.groupId, uid, group, user);
+  const model = process.env.ASSISTANT_MODEL || 'claude-sonnet-5-5';
+  const callModel = async ({ system, messages, tools }) => {
+    const r = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-api-key': key, 'anthropic-version': '2023-06-01' },
+      body: JSON.stringify({ model, max_tokens: 1024, system, messages, tools })
+    });
+    const body = await r.json().catch(() => ({}));
+    if (!r.ok) {
+      logger.error('assistant model call failed', r.status, body && body.error);
+      throw new HttpsError('unavailable', r.status === 401 ? 'The assistant’s API key isn’t working. Check ANTHROPIC_API_KEY.' : 'Claude didn’t answer. Try again in a moment.');
+    }
+    return body;
+  };
+  const out = await Assistant.run({ history: d.history, text: d.text, ctx, callModel });
+  return { reply: out.reply, changed: out.changed };
 });
