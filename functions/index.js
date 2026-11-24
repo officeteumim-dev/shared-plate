@@ -272,6 +272,9 @@ function toolContext(groupId, uid, group, user) {
       async shopAdd(data) { const ref = shop.doc(); await ref.set(toFirestore(data)); return ref.id; },
       async shopUpdate(id, patch) { await shop.doc(id).update(toFirestore(patch)); },
       async shopDelete(id) { await shop.doc(id).delete(); },
+      async hoursAdd(data) { const ref = db.collection(`groups/${groupId}/hours`).doc(); await ref.set(toFirestore(data)); return ref.id; },
+      async hoursList(from) { const q = await db.collection(`groups/${groupId}/hours`).where('date', '>=', from).get(); return q.docs.map(fromDoc); },
+      async addClient(id, data) { await db.doc(`groups/${groupId}`).update({ [`clients.${id}`]: data }); },
       async comments(kind, id) {
         const q = await db.collection(`groups/${groupId}/${kind}/${id}/comments`).orderBy('at').limit(50).get();
         return q.docs.map(fromDoc).map(c => ({ ...c, at: c.at && c.at.toMillis ? c.at.toMillis() : c.at }));

@@ -257,6 +257,32 @@ test('linked families: members read links and the inbox; only the server writes 
   await assertFails(updateDoc(doc(db.A(), 'groups', G, 'tasks', 't1'), { familyShare: 'yes' }));
 });
 
+test('hours: members log, time and edit hours for anyone in the household; clients live on the group', async () => {
+  const entry = { client: 'c1', who: B, date: '2026-11-24', minutes: 90, note: 'Fixes', startedAt: null, createdBy: A, createdAt: serverTimestamp(), updatedAt: serverTimestamp() };
+  await assertSucceeds(setDoc(doc(db.A(), 'groups', G, 'hours', 'h1'), entry));
+  // A running timer: startedAt with no minutes; stopping it sets minutes.
+  await assertSucceeds(setDoc(doc(db.B(), 'groups', G, 'hours', 'h2'), { ...entry, who: A, minutes: null, startedAt: Date.now(), createdBy: B }));
+  await assertSucceeds(updateDoc(doc(db.A(), 'groups', G, 'hours', 'h2'), { minutes: 30, startedAt: null, updatedAt: serverTimestamp() }));
+  await assertSucceeds(getDoc(doc(db.B(), 'groups', G, 'hours', 'h1')));
+  // Outsiders can't read or write; bad shapes are refused.
+  await assertFails(getDoc(doc(db.C(), 'groups', G, 'hours', 'h1')));
+  await assertFails(setDoc(doc(db.C(), 'groups', G, 'hours', 'h3'), { ...entry, createdBy: C }));
+  await assertFails(setDoc(doc(db.A(), 'groups', G, 'hours', 'h4'), { ...entry, who: C }));
+  await assertFails(setDoc(doc(db.A(), 'groups', G, 'hours', 'h5'), { ...entry, minutes: 0 }));
+  await assertFails(setDoc(doc(db.A(), 'groups', G, 'hours', 'h6'), { ...entry, minutes: 1500 }));
+  await assertFails(setDoc(doc(db.A(), 'groups', G, 'hours', 'h7'), { ...entry, date: 'Tuesday' }));
+  await assertFails(setDoc(doc(db.A(), 'groups', G, 'hours', 'h8'), { ...entry, minutes: 30, startedAt: Date.now() }));
+  await assertFails(setDoc(doc(db.A(), 'groups', G, 'hours', 'h9'), { ...entry, createdBy: B }));
+  await assertFails(setDoc(doc(db.A(), 'groups', G, 'hours', 'h10'), { ...entry, rate: 50 }));
+  await assertFails(updateDoc(doc(db.B(), 'groups', G, 'hours', 'h1'), { createdBy: B }));
+  await assertSucceeds(deleteDoc(doc(db.B(), 'groups', G, 'hours', 'h1')));
+  // Clients: any member (not just the owner) can add one; nobody else.
+  await assertSucceeds(updateDoc(doc(db.B(), 'groups', G), { 'clients.c1': { name: 'Acme', rate: 85 } }));
+  await assertSucceeds(updateDoc(doc(db.A(), 'groups', G), { 'clients.c2': { name: 'Brightside' } }));
+  await assertFails(updateDoc(doc(db.C(), 'groups', G), { 'clients.c3': { name: 'Sneaky' } }));
+  await assertFails(updateDoc(doc(db.B(), 'groups', G), { 'clients.c4': { name: 'X' }, name: 'Renamed' }));
+});
+
 test('anything outside groups and users is closed', async () => {
   await assertFails(setDoc(doc(db.A(), 'config', 'x'), { a: 1 }));
   await assertFails(getDoc(doc(db.A(), 'config', 'x')));
