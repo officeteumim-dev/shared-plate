@@ -1,6 +1,7 @@
 node_modules/
 functions/logic.js
 functions/hebrew.js
+functions/hours.js
 *.log
 .firebase/
 firebase-debug.log*

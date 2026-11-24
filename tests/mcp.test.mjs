@@ -44,7 +44,7 @@ test('the handshake and the tool list', async () => {
   assert.ok(init.result.capabilities.tools);
   assert.equal(await mcp.handleMessage({ jsonrpc: '2.0', method: 'notifications/initialized' }, ctx), null);
   const list = await mcp.handleMessage({ jsonrpc: '2.0', id: 2, method: 'tools/list' }, ctx);
-  assert.deepEqual(list.result.tools.map(t => t.name), ['get_household', 'list_tasks', 'add_task', 'update_task', 'complete_task', 'add_shopping_items', 'list_shopping', 'update_shopping_item', 'add_comment', 'get_comments', 'take_task']);
+  assert.deepEqual(list.result.tools.map(t => t.name), ['get_household', 'list_tasks', 'add_task', 'update_task', 'complete_task', 'add_shopping_items', 'list_shopping', 'update_shopping_item', 'log_time', 'hours_summary', 'add_comment', 'get_comments', 'take_task']);
   const unknown = await mcp.handleMessage({ jsonrpc: '2.0', id: 3, method: 'resources/list' }, ctx);
   assert.equal(unknown.error.code, -32601);
 });

@@ -130,6 +130,36 @@ const TOOLS = [
     }
   },
   {
+    name: 'log_time',
+    description: 'Log hours worked for a client (Hours). Say who did the work (default me), the client, how long, and the day (default today).',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        client: { type: 'string', description: 'Client name, as in hours_summary. Unknown names are refused unless new_client is true.' },
+        duration: { type: 'string', description: 'How long: "1.5", "1:30", "90m" or "2h 15m". Up to 24 hours.' },
+        date: { type: 'string', description: 'Day worked, YYYY-MM-DD. Default today.' },
+        who: { type: 'string', description: '"me" (default) or a household member\'s name.' },
+        note: { type: 'string', description: 'What was done.' },
+        new_client: { type: 'boolean', description: 'Add the client if there isn\'t one by that name.' }
+      },
+      required: ['client', 'duration'],
+      additionalProperties: false
+    }
+  },
+  {
+    name: 'hours_summary',
+    description: 'Hours worked per client and per person for a period, with amounts for clients that have an hourly rate, and the entries. Also lists the clients.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        period: { type: 'string', enum: ['week', 'lastweek', 'month', 'lastmonth', 'year'], description: 'Default this week (weeks start Sunday).' },
+        client: { type: 'string', description: 'Only this client.' }
+      },
+      additionalProperties: false
+    },
+    annotations: { readOnlyHint: true }
+  },
+  {
     name: 'add_comment',
     description: 'Comment on a task or a shopping item, for example to ask the other person for more detail ("Which brand?"). They get a notification.',
     inputSchema: {
@@ -162,6 +192,9 @@ const TOOLS = [
 ];
 
 // ctx: { uid, group: {name, members, names}, tz, now, store: { list(), get(id), add(data) → id, update(id, patch) }, L (logic.js) }
+let HoursMod;
+const Hours = () => HoursMod || (HoursMod = (() => { try { return require('./hours'); } catch (e) { return require('../public/hours.js'); } })());
+
 async function callTool(name, args, ctx) {
   const { uid, group, tz, now, store, L } = ctx;
   args = args || {};
@@ -316,6 +349,48 @@ async function callTool(name, args, ctx) {
       return `${m.name}: ${m.checked ? 'checked off' : 'to get'}, on ${m.list}.`;
     }
 
+    case 'log_time': {
+      const H = Hours();
+      const minutes = H.parseDuration(args.duration);
+      if (!minutes) throw new UserError(`Couldn't read "${args.duration}" as a length of time. Try "1.5", "1:30" or "45m" (up to 24 hours).`);
+      const today = H.localYmd(now, tz);
+      const date = args.date == null || args.date === '' ? today : clean(args.date, 10);
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) throw new UserError('date must look like 2026-11-24.');
+      let who = resolveOwner(args.who);
+      if (who === 'shared') throw new UserError('Say who did the work: a person, not shared.');
+      const clients = group.clients || {};
+      let c = H.findClient(clients, args.client);
+      if (!c) {
+        const list = Object.values(clients).filter(x => !x.archived).map(x => x.name).sort();
+        if (!args.new_client) throw new UserError(`No client called "${clean(args.client, 60)}". Clients: ${list.join(', ') || 'none yet'}. Set new_client to add it.`);
+        const name = clean(args.client, 60).replace(/\s+/g, ' ');
+        if (!name) throw new UserError('Say which client.');
+        const id = 'c' + Math.random().toString(36).slice(2, 10);
+        await store.addClient(id, { name });
+        group.clients = { ...clients, [id]: { name } };
+        c = { id, name };
+      }
+      await store.hoursAdd({ client: c.id, who, date, minutes, note: clean(args.note, 300), startedAt: null, createdBy: uid, createdAt: 'NOW', updatedAt: 'NOW' });
+      return `Logged ${H.fmtDuration(minutes)} for ${c.name} by ${nameOf(who)} on ${date}.`;
+    }
+    case 'hours_summary': {
+      const H = Hours();
+      const per = H.period(H.PERIODS.includes(args.period) ? args.period : 'week', H.localYmd(now, tz));
+      const clients = group.clients || {};
+      let only = null;
+      if (args.client) { only = H.findClient(clients, args.client); if (!only) throw new UserError(`No client called "${clean(args.client, 60)}".`); }
+      const entries = (await store.hoursList(per.from)).filter(e => H.inPeriod(e, per) && (!only || e.client === only.id));
+      const sum = H.summarize(entries, clients, now);
+      const cname = id => (clients[id] && clients[id].name) || 'Unknown client';
+      const out = [`${per.label} (${per.from} to ${H.addDays(per.to, -1)}): ${H.fmtDuration(sum.total)}${sum.amount ? `, ${H.money(sum.amount)}` : ''}`];
+      for (const [id, c] of Object.entries(sum.byClient).sort((a, b) => cname(a[0]).localeCompare(cname(b[0])))) {
+        out.push(`  ${cname(id)}: ${H.fmtDuration(c.minutes)}${c.amount ? ` (${H.money(c.amount)})` : ''} — ${Object.entries(c.byWho).map(([u, m]) => `${nameOf(u)} ${H.fmtDuration(m)}`).join(', ')}`);
+      }
+      if (entries.length) out.push('Entries:', ...entries.sort((a, b) => a.date.localeCompare(b.date)).slice(-60).map(e => `  ${e.date} ${cname(e.client)} — ${nameOf(e.who)}, ${e.startedAt ? 'timer running' : H.fmtDuration(e.minutes)}${e.note ? ` — ${e.note}` : ''}`));
+      const all = Object.values(clients).filter(x => !x.archived).map(x => x.name + (x.rate ? ` (${H.money(x.rate)}/hr)` : '')).sort();
+      out.push(`Clients: ${all.join(', ') || 'none yet'}`);
+      return out.join('\n');
+    }
     case 'add_comment':
     case 'get_comments': {
       const kind = args.about === 'shopping' ? 'shopping' : 'tasks';
@@ -361,7 +436,8 @@ async function handleMessage(msg, ctx) {
         instructions: 'Shared Plate is a household task list. Every task has one owner: a person, or "shared" for whoever takes it. ' +
           'Use get_household to learn the names, today\'s date and the time zone; list_tasks to find task ids; add_task for new reminders and events. ' +
           'There is also a shared shopping list (add_shopping_items, list_shopping, update_shopping_item). ' +
-          'Use add_comment to ask the other person about a task or shopping item; get_comments reads the replies.'
+          'Use add_comment to ask the other person about a task or shopping item; get_comments reads the replies. ' +
+          'Hours for clients: log_time records work (who, client, how long, day); hours_summary shows totals per client and person.'
       });
     }
     case 'ping': return reply({});

@@ -19,7 +19,7 @@
         ]
       },
       {
-        "source": "/@(index.html|sw.js|config.js|app.js|app.css|logic.js|hebrew.js|manifest.webmanifest)",
+        "source": "/@(index.html|sw.js|config.js|app.js|app.css|logic.js|hebrew.js|hours.js|manifest.webmanifest)",
         "headers": [
           {
             "key": "Cache-Control",
@@ -56,7 +56,8 @@
       "runtime": "nodejs22",
       "predeploy": [
         "cp \"$PROJECT_DIR/public/logic.js\" \"$RESOURCE_DIR/logic.js\"",
-        "cp \"$PROJECT_DIR/public/hebrew.js\" \"$RESOURCE_DIR/hebrew.js\""
+        "cp \"$PROJECT_DIR/public/hebrew.js\" \"$RESOURCE_DIR/hebrew.js\"",
+        "cp \"$PROJECT_DIR/public/hours.js\" \"$RESOURCE_DIR/hours.js\""
       ]
     }
   ],

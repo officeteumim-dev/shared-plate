@@ -6,6 +6,7 @@
   const C = self.SP_CONFIG || {};
   const L = self.SP_LOGIC;
   const Hb = self.SP_HEBREW;
+  const Hr = self.Hours;
   const $ = s => document.querySelector(s);
   const app = $('#app'), sheetRoot = $('#sheet-root'), toastEl = $('#toast');
   const params = new URLSearchParams(location.search);
@@ -30,6 +31,7 @@
     send: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h13M13 6l6 6-6 6"/></svg>',
     inbox: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 13l2.5-7.5h11L20 13v5.5a1.5 1.5 0 0 1-1.5 1.5h-13A1.5 1.5 0 0 1 4 18.5z"/><path d="M4 13h4.5l1.5 2.5h4l1.5-2.5H20"/></svg>',
     cart: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 4h2.2l2.3 11.2a1.6 1.6 0 0 0 1.6 1.3h8.1a1.6 1.6 0 0 0 1.6-1.2L20.5 8H6.1"/><circle cx="9.5" cy="20" r="1.3"/><circle cx="17" cy="20" r="1.3"/></svg>',
+    clock: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/></svg>',
     cal: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="5" width="17" height="15.5" rx="2.5"/><path d="M3.5 10h17M8 3v4M16 3v4"/></svg>',
     next: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg>',
     grip: '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="9" cy="6" r="1.7"/><circle cx="15" cy="6" r="1.7"/><circle cx="9" cy="12" r="1.7"/><circle cx="15" cy="12" r="1.7"/><circle cx="9" cy="18" r="1.7"/><circle cx="15" cy="18" r="1.7"/></svg>',
@@ -146,7 +148,17 @@
       ['p8', { ...base, title: 'Book the summer camp', owner: her, status: 'snoozed', showAgainOn: at(3, 8), createdBy: her }],
       ['p9', { ...base, title: 'Water the plants', owner: me, status: 'done', completedAt: t0 - 3 * H, completedBy: me }]
     ]);
-    let onOpen = () => {}, onDone = () => {}, onGroup = () => {}, onProfile = () => {}, onShop = () => {};
+    let onOpen = () => {}, onDone = () => {}, onGroup = () => {}, onProfile = () => {}, onShop = () => {}, onHours = () => {};
+    // Hours for clients: a few entries this week.
+    group.clients = { c1: { name: 'Acme Dental', rate: 85 }, c2: { name: 'Brightside Realty' }, c3: { name: 'Cohen & Co', rate: 60 } };
+    const ymdOf = n => { const d = new Date(day(n)); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
+    const hours = new Map([
+      ['h1', { client: 'c1', who: me, date: ymdOf(0), minutes: 90, note: 'Website fixes', createdBy: me, createdAt: t0 - 2 * H }],
+      ['h2', { client: 'c1', who: her, date: ymdOf(-1), minutes: 120, note: 'Bookkeeping', createdBy: her, createdAt: t0 - 26 * H }],
+      ['h3', { client: 'c2', who: her, date: ymdOf(0), minutes: 45, note: '', createdBy: her, createdAt: t0 - H }],
+      ['h4', { client: 'c3', who: me, date: ymdOf(-40), minutes: 60, note: 'Old project', createdBy: me, createdAt: t0 - 40 * 24 * H }]
+    ]);
+    const emitHours = () => { const all = [...hours].map(([id, x]) => ({ id, ...x })); setTimeout(() => onHours(all)); };
     const shop = new Map([
       ['s1', { name: 'Milk', list: 'Groceries', note: '2 gallons', checked: false, addedBy: her, createdAt: t0 - 3 * H }],
       ['s2', { name: 'Challah flour', list: 'Groceries', checked: false, addedBy: me, createdAt: t0 - 2 * H }],
@@ -189,6 +201,11 @@
       },
       watchTasks(gid, a, b) { onOpen = a; onDone = b; emit(); return () => {}; },
       watchShopping(gid, cb) { onShop = cb; emitShop(); return () => {}; },
+      watchHours(gid, from, cb) { onHours = cb; emitHours(); return () => {}; },
+      newHoursId() { return 'h' + (++seq); },
+      setHours(gid, id, d) { hours.set(id, resolve(d)); emitHours(); return Promise.resolve(id); },
+      updateHours(gid, id, p) { hours.set(id, { ...hours.get(id), ...resolve(p) }); emitHours(); return Promise.resolve(); },
+      deleteHours(gid, id) { hours.delete(id); emitHours(); return Promise.resolve(); },
       watchLinks(gid, cb) { onLinks = cb; emitLinks(); return () => {}; },
       watchInbox(gid, cb) { onInbox = cb; emitInbox(); return () => {}; },
       // The household-to-household actions run on the server; the preview acts them out.
@@ -291,6 +308,14 @@
         return () => { a(); b(); };
       },
       newId(gid) { return tasksCol(gid).doc().id; },
+      // Hours: groups/<gid>/hours/<entry>, from a date on.
+      watchHours(gid, from, cb, onErr) {
+        return db.collection(`groups/${gid}/hours`).where('date', '>=', from).onSnapshot(q => cb(q.docs.map(d => ({ id: d.id, ...snapData(d) }))), onErr);
+      },
+      newHoursId(gid) { return db.collection(`groups/${gid}/hours`).doc().id; },
+      setHours(gid, id, data) { db.doc(`groups/${gid}/hours/${id}`).set(toFs(data)).catch(e => fail(e, 'save that')); return Promise.resolve(id); },
+      updateHours(gid, id, patch) { db.doc(`groups/${gid}/hours/${id}`).update(toFs(patch)).catch(e => fail(e, 'save that')); return Promise.resolve(); },
+      deleteHours(gid, id) { db.doc(`groups/${gid}/hours/${id}`).delete().catch(e => fail(e, 'delete that')); return Promise.resolve(); },
       // Shopping list: groups/<gid>/shopping/<item>, shared by the household.
       watchLinks(gid, cb) {
         return db.collection(`groups/${gid}/links`).onSnapshot(q => cb(q.docs.map(d => ({ id: d.id, ...snapData(d) }))), () => cb([]));
@@ -511,7 +536,8 @@
     }, lost));
     S.unsub.push(B.watchTasks(gid, list => { S.open = list; S.loaded = true; render(); openDeepLink();
       if (S.pendingImport) { const c = S.pendingImport; S.pendingImport = null; openImport(c); } }, list => { S.done = list; if (S.view === 'done' || S.view === 'calendar') render(); }, lost));
-    S.shop = []; S.links = []; S.inbox = []; S.linked = null;
+    S.shop = []; S.links = []; S.inbox = []; S.linked = null; S.hours = [];
+    S.unsub.push(B.watchHours(gid, `${new Date().getFullYear() - 1}-01-01`, list => { S.hours = list; if (S.view === 'hours') renderHours(); else if (S.view === 'home') render(); }, () => {}));
     S.unsub.push(B.watchLinks(gid, l => {
       S.links = l; S.linked = null;
       if (S.view === 'calendar') renderCalendar();
@@ -615,6 +641,7 @@
     if (S.view === 'done') return renderDone();
     if (S.view === 'shopping') return renderShopping();
     if (S.view === 'calendar') return renderCalendar();
+    if (S.view === 'hours') return renderHours();
     if (S.view === 'assistant') { if (!app.querySelector('.assistant-view')) renderAssistant(); return; }
     S.view = 'home';
     const t = now();
@@ -636,6 +663,7 @@
         <div style="display:flex;gap:8px;align-items:center">
           ${PREVIEW ? '<span class="preview-flag">Preview</span>' : ''}
           <button class="icon-btn shop-btn" data-act="shopping" aria-label="Shopping list${shopCount() ? `, ${shopCount()} to get` : ''}">${ICON.cart}${shopCount() ? `<span class="badge">${shopCount() > 99 ? '99+' : shopCount()}</span>` : ''}${shopUnread() ? '<span class="new-dot" aria-label="new comments"></span>' : ''}</button>
+          <button class="icon-btn hrs-btn${myRunning() ? ' running' : ''}" data-act="hours" aria-label="Hours${myRunning() ? ', timer running' : ''}">${ICON.clock}</button>
           <button class="icon-btn" data-act="calendar" aria-label="Calendar">${ICON.cal}</button>
           <button class="icon-btn" data-act="settings" aria-label="Settings">${ICON.gear}</button>
         </div>
@@ -983,6 +1011,180 @@
           : '<div class="empty">Nothing scheduled. Tap Add to put something on this day.</div>'}
       </section>
       <button class="fab" data-act="add-on-day" aria-label="Add a task on ${esc(selName)}">${ICON.plus}<span>Add</span></button>`;
+  }
+
+  // ---------- Hours ----------
+  // Time worked for clients, by who did it: a timer anyone can start for anyone, time logged by hand, and totals per
+  // client and person for a week, a month or the year. Clients live on the household (group.clients).
+  const memberIds = () => Object.keys(S.group?.members || {}).sort((a, b) => (a === S.uid ? -1 : b === S.uid ? 1 : String(S.group.names?.[a] || '').localeCompare(String(S.group.names?.[b] || ''))));
+  const personName = uid => S.group?.names?.[uid] || 'Someone';
+  const clientsMap = () => S.group?.clients || {};
+  const activeClients = () => Object.entries(clientsMap()).filter(([, c]) => !c.archived).map(([id, c]) => ({ id, ...c })).sort((a, b) => a.name.localeCompare(b.name));
+  const clientName = id => clientsMap()[id]?.name || 'Unknown client';
+  const todayYmd = () => Hr.localYmd(now(), S.profile?.tz || Intl.DateTimeFormat().resolvedOptions().timeZone);
+  const running = () => (S.hours || []).filter(e => e.startedAt);
+  const myRunning = () => running().some(e => e.who === S.uid);
+  const pref = (k, d) => { try { return localStorage.getItem(k) || d; } catch (e) { return d; } };
+  const setPref = (k, v) => { try { localStorage.setItem(k, v); } catch (e) {} };
+  function hrsDefaults() {
+    if (!S.hrsWho || !(S.hrsWho in (S.group?.members || {}))) S.hrsWho = S.uid;
+    const active = activeClients();
+    if (!S.hrsClient || !active.some(c => c.id === S.hrsClient)) { const saved = pref('sp_client', ''); S.hrsClient = active.some(c => c.id === saved) ? saved : (active[0] || {}).id || ''; }
+    if (!Hr.PERIODS.includes(S.hrsPeriod)) S.hrsPeriod = 'week';
+  }
+  const fmtDay = ymd => { const [y, m, d] = ymd.split('-').map(Number); return new Date(y, m - 1, d).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' }); };
+
+  function renderHours() {
+    S.view = 'hours';
+    hrsDefaults();
+    const t = now(), people = memberIds(), active = activeClients(), clients = clientsMap();
+    const per = Hr.period(S.hrsPeriod, todayYmd());
+    const inPer = (S.hours || []).filter(e => Hr.inPeriod(e, per));
+    const sum = Hr.summarize(inPer, clients, t);
+    const filter = S.hrsFilter && clients[S.hrsFilter] ? S.hrsFilter : '';
+    const shown = inPer.filter(e => !filter || e.client === filter).sort((a, b) => b.date.localeCompare(a.date) || (L.toMs(b.createdAt) || 0) - (L.toMs(a.createdAt) || 0));
+    const runs = running();
+    const runHtml = runs.length ? `<ul class="hrs-running" aria-label="Timers running">${runs.map(e => `<li>
+        <span class="pulse" aria-hidden="true"></span>
+        <button class="hrs-run-body" data-act="hrs-edit" data-id="${esc(e.id)}"><b>${esc(clientName(e.client))}</b><span>${esc(personName(e.who))}${e.note ? ' · ' + esc(e.note) : ''}</span></button>
+        <span class="elapsed" data-since="${e.startedAt}">${Hr.fmtDuration(Hr.minutesOf(e, t))}</span>
+        <button class="btn small" data-act="hrs-stop" data-id="${esc(e.id)}">Stop</button></li>`).join('')}</ul>` : '';
+    const ids = Object.keys(sum.byClient).sort((a, b) => clientName(a).localeCompare(clientName(b)));
+    const anyMoney = sum.amount > 0;
+    const table = ids.length ? `<div class="hrs-table-wrap"><table class="hrs-sum">
+      <thead><tr><th scope="col">Client</th>${people.map(u => `<th scope="col">${esc(personName(u))}</th>`).join('')}<th scope="col">Total</th></tr></thead>
+      <tbody>${ids.map(id => { const c = sum.byClient[id]; return `<tr class="${filter === id ? 'on' : ''}">
+        <th scope="row"><button class="link" data-act="hrs-filter" data-id="${esc(id)}" aria-pressed="${filter === id}">${esc(clientName(id))}</button></th>${people.map(u => `<td>${c.byWho[u] ? Hr.fmtDuration(c.byWho[u]) : '–'}</td>`).join('')}
+        <td><b>${Hr.fmtDuration(c.minutes)}</b>${c.amount ? `<small>${Hr.money(c.amount)}</small>` : ''}</td></tr>`; }).join('')}</tbody>
+      <tfoot><tr><th scope="row">Total</th>${people.map(u => `<td>${sum.byWho[u] ? Hr.fmtDuration(sum.byWho[u]) : '–'}</td>`).join('')}<td><b>${Hr.fmtDuration(sum.total)}</b>${anyMoney ? `<small>${Hr.money(sum.amount)}</small>` : ''}</td></tr></tfoot>
+    </table></div>` : `<div class="empty">No hours ${per.key === 'year' ? 'this year' : per.label.toLowerCase()} yet.</div>`;
+    const days = [...new Set(shown.map(e => e.date))];
+    const list = days.map(d => `<h4 class="cat-head">${esc(fmtDay(d))}</h4><ul class="hrs-entries">${shown.filter(e => e.date === d).map(e => `<li><button class="hrs-entry" data-act="hrs-edit" data-id="${esc(e.id)}">
+        <span class="who-dot" style="background:${personColor(e.who)}" aria-hidden="true"></span>
+        <span class="hrs-what"><b>${esc(clientName(e.client))}</b><span>${esc(personName(e.who))}${e.note ? ' · ' + esc(e.note) : ''}</span></span>
+        <span class="hrs-dur">${e.startedAt ? 'Running' : Hr.fmtDuration(e.minutes)}</span></button></li>`).join('')}</ul>`).join('');
+    app.innerHTML = `<header class="top"><button class="icon-btn" data-act="home" aria-label="Back">${ICON.back}</button><h1>Hours</h1>
+        <button class="btn quiet small" data-act="hrs-export" ${inPer.length ? '' : 'disabled'}>Export</button></header>
+      <section class="hrs-start card">
+        <div class="field"><span>Who’s working</span><div class="seg" role="group" aria-label="Who's working">${people.map(u => `<button type="button" data-act="hrs-who" data-uid="${esc(u)}" aria-pressed="${u === S.hrsWho}">${esc(personName(u))}</button>`).join('')}</div></div>
+        <div class="field"><span>Client</span><div class="client-chips" role="group" aria-label="Client">${active.map(c => `<button type="button" class="cat-chip" data-act="hrs-client" data-id="${esc(c.id)}" aria-pressed="${c.id === S.hrsClient}">${esc(c.name)}</button>`).join('')}
+          <button type="button" class="cat-chip add" data-act="hrs-new-client">+ New client</button></div></div>
+        <div class="row2"><button class="btn" data-act="hrs-start" ${S.hrsClient ? '' : 'disabled'}>Start timer</button><button class="btn quiet" data-act="hrs-log" ${S.hrsClient ? '' : 'disabled'}>Log time</button></div>
+      </section>
+      ${runHtml}
+      <nav class="cats" aria-label="Period">${Hr.PERIODS.map(k => `<button class="cat-chip" data-act="hrs-period" data-key="${k}" aria-pressed="${k === per.key}">${esc(Hr.period(k, todayYmd()).label)}</button>`).join('')}</nav>
+      ${table}
+      ${shown.length ? `<div class="hrs-list-head"><h3>${filter ? esc(clientName(filter)) : 'All entries'}</h3>${filter ? '<button class="link" data-act="hrs-filter" data-id="">Show all clients</button>' : ''}</div>${list}` : ''}
+      <p class="hrs-foot"><button class="link" data-act="hrs-clients">Manage clients</button></p>`;
+  }
+  // Keep running timers ticking on screen.
+  setInterval(() => {
+    if (S.view !== 'hours') return;
+    document.querySelectorAll('.elapsed[data-since]').forEach(el => { el.textContent = Hr.fmtDuration(Hr.minutesOf({ startedAt: +el.dataset.since }, now())); });
+  }, 15000);
+
+  function startTimer() {
+    hrsDefaults();
+    if (!S.hrsClient) return openClient();
+    const who = S.hrsWho, already = running().find(e => e.who === who);
+    if (already) stopTimer(already.id, true);
+    const id = B.newHoursId(S.gid);
+    B.setHours(S.gid, id, { client: S.hrsClient, who, date: todayYmd(), minutes: null, startedAt: now(), note: '', createdBy: S.uid, createdAt: 'NOW', updatedAt: 'NOW' });
+    toast(`${who === S.uid ? 'Your' : personName(who) + '’s'} timer started for ${clientName(S.hrsClient)}.${already ? ' (The last one was stopped.)' : ''}`);
+  }
+  function stopTimer(id, quiet) {
+    const e = (S.hours || []).find(x => x.id === id); if (!e || !e.startedAt) return;
+    let min = Math.max(1, Math.round((now() - e.startedAt) / 60000));
+    const capped = min > 24 * 60; if (capped) min = 24 * 60;
+    B.updateHours(S.gid, id, { minutes: min, startedAt: null, updatedAt: 'NOW' });
+    if (!quiet) toast(`${Hr.fmtDuration(min)} for ${clientName(e.client)}.${capped ? ' Capped at 24 hours; edit it if that’s wrong.' : ''}`, 'Edit', () => openHours(id));
+  }
+
+  // Log time by hand, or edit an entry (id).
+  function openHours(id) {
+    hrsDefaults();
+    const e = id ? (S.hours || []).find(x => x.id === id) : null;
+    if (id && !e) return;
+    let who = e ? e.who : S.hrsWho;
+    const cur = e ? e.client : S.hrsClient;
+    const opts = [...activeClients(), ...(e && clientsMap()[e.client]?.archived ? [{ id: e.client, ...clientsMap()[e.client] }] : [])];
+    openSheet(`<form id="hrs-form" class="stack" autocomplete="off">
+      <h2>${e ? (e.startedAt ? 'Timer running' : 'Edit time') : 'Log time'}</h2>
+      <div class="field"><span>Who did the work</span><div class="seg" id="hrs-form-who">${memberIds().map(u => `<button type="button" data-uid="${esc(u)}" aria-pressed="${u === who}">${esc(personName(u))}</button>`).join('')}</div></div>
+      <label class="field"><span>Client</span><select name="client" required>${opts.map(c => `<option value="${esc(c.id)}" ${c.id === cur ? 'selected' : ''}>${esc(c.name)}</option>`).join('')}</select></label>
+      <div class="day-time"><label class="field"><span>Date</span><input type="date" name="date" required value="${esc(e ? e.date : todayYmd())}"></label>
+        ${e && e.startedAt ? `<div class="field"><span>So far</span><output class="hrs-so-far">${Hr.fmtDuration(Hr.minutesOf(e, now()))}</output></div>`
+          : `<label class="field"><span>Time</span><input type="text" name="dur" inputmode="decimal" required placeholder="1:30 or 1.5" value="${e ? esc(Hr.fmtDuration(e.minutes)) : ''}" aria-describedby="dur-tip"></label>`}</div>
+      ${e && e.startedAt ? '' : '<p class="muted small" id="dur-tip">Hours and minutes (1:30), decimal hours (1.5), or 45m.</p>'}
+      <label class="field"><span>What was done (optional)</span><input type="text" name="note" maxlength="300" value="${esc(e ? e.note || '' : '')}" placeholder="e.g. Website fixes"></label>
+      <div class="actions"><button class="btn block" type="submit">${e && e.startedAt ? 'Save' : e ? 'Save' : 'Log it'}</button>
+        ${e && e.startedAt ? `<button type="button" class="btn quiet" data-act="hrs-stop" data-id="${esc(e.id)}">Stop timer</button>` : ''}
+        ${e ? `<button type="button" class="btn danger" data-act="hrs-delete" data-id="${esc(e.id)}">Delete</button>` : ''}</div></form>`, sheet => {
+      const form = sheet.querySelector('#hrs-form');
+      sheet.querySelector('#hrs-form-who').onclick = ev => {
+        const b = ev.target.closest('[data-uid]'); if (!b) return; who = b.dataset.uid;
+        sheet.querySelectorAll('#hrs-form-who [data-uid]').forEach(o => o.setAttribute('aria-pressed', o === b));
+      };
+      form.onsubmit = ev => {
+        ev.preventDefault();
+        const data = { client: form.client.value, who, date: form.date.value, note: form.note.value.trim().slice(0, 300), updatedAt: 'NOW' };
+        if (!data.client || !/^\d{4}-\d{2}-\d{2}$/.test(data.date)) return;
+        if (form.dur) {
+          const min = Hr.parseDuration(form.dur.value);
+          if (!min) { form.dur.setCustomValidity('Try 1:30, 1.5 or 45m (up to 24 hours).'); form.dur.reportValidity(); form.dur.oninput = () => form.dur.setCustomValidity(''); return; }
+          data.minutes = min;
+        }
+        if (e) B.updateHours(S.gid, e.id, data);
+        else B.setHours(S.gid, B.newHoursId(S.gid), { ...data, startedAt: null, createdBy: S.uid, createdAt: 'NOW' });
+        S.hrsClient = data.client; setPref('sp_client', data.client);
+        closeSheet();
+        toast(e ? 'Saved.' : `Logged ${Hr.fmtDuration(data.minutes)} for ${clientName(data.client)}.`);
+      };
+    });
+  }
+
+  // Add or edit a client: name, an optional hourly rate, archive.
+  function openClient(id) {
+    const c = id ? clientsMap()[id] : null;
+    openSheet(`<form id="client-form" class="stack" autocomplete="off">
+      <h2>${c ? 'Edit client' : 'New client'}</h2>
+      <label class="field"><span>Client name</span><input type="text" name="name" maxlength="60" required value="${esc(c ? c.name : '')}" placeholder="e.g. Acme Dental"></label>
+      <label class="field"><span>Hourly rate (optional)</span><input type="number" name="rate" min="0" max="100000" step="0.01" inputmode="decimal" value="${c && c.rate ? esc(c.rate) : ''}" placeholder="$ per hour"></label>
+      <p class="muted small">With a rate, totals show what to bill.</p>
+      ${c ? `<label class="toggle"><span>Archived <small class="muted">(hidden from the list; its hours stay)</small></span><input type="checkbox" name="archived" ${c.archived ? 'checked' : ''}></label>` : ''}
+      <div class="actions"><button class="btn block" type="submit">${c ? 'Save' : 'Add client'}</button></div></form>`, sheet => {
+      const form = sheet.querySelector('#client-form');
+      form.name.focus();
+      form.onsubmit = ev => {
+        ev.preventDefault();
+        const name = form.name.value.trim().replace(/\s+/g, ' ').slice(0, 60); if (!name) return;
+        const dup = Hr.findClient(clientsMap(), name);
+        if (!c && dup && dup.name.toLowerCase() === name.toLowerCase()) { form.name.setCustomValidity('There’s already a client by that name.'); form.name.reportValidity(); form.name.oninput = () => form.name.setCustomValidity(''); return; }
+        const rate = Number(form.rate.value);
+        const data = { name, ...(rate > 0 ? { rate: Math.round(rate * 100) / 100 } : {}), ...(c && form.archived.checked ? { archived: true } : {}) };
+        const cid = id || 'c' + Math.random().toString(36).slice(2, 10);
+        if (!id || !data.archived) { S.hrsClient = cid; setPref('sp_client', cid); }
+        B.updateGroup(S.gid, { ['clients.' + cid]: data }).catch(er => fail(er, 'save the client'));
+        closeSheet();
+        toast(c ? 'Saved.' : `Added ${name}.`);
+      };
+    });
+  }
+  function openClients() {
+    const all = Object.entries(clientsMap()).map(([id, c]) => ({ id, ...c })).sort((a, b) => (a.archived ? 1 : 0) - (b.archived ? 1 : 0) || a.name.localeCompare(b.name));
+    openSheet(`<div class="stack"><h2>Clients</h2>
+      ${all.length ? `<ul class="client-list">${all.map(c => `<li><button class="client-row" data-act="hrs-edit-client" data-id="${esc(c.id)}"><b>${esc(c.name)}</b><span>${[c.rate ? Hr.money(c.rate) + '/hr' : '', c.archived ? 'Archived' : ''].filter(Boolean).join(' · ')}</span></button></li>`).join('')}</ul>` : '<p class="muted">No clients yet.</p>'}
+      <button class="btn" data-act="hrs-new-client">Add a client</button></div>`);
+  }
+  function exportHours() {
+    const per = Hr.period(S.hrsPeriod || 'week', todayYmd());
+    const rows = (S.hours || []).filter(e => Hr.inPeriod(e, per) && (!S.hrsFilter || e.client === S.hrsFilter));
+    const text = Hr.csv(rows, clientsMap(), S.group?.names || {}, now());
+    const name = `hours-${S.hrsFilter ? clientName(S.hrsFilter).replace(/[^\w]+/g, '-').toLowerCase() + '-' : ''}${per.from}-to-${Hr.addDays(per.to, -1)}.csv`;
+    const url = URL.createObjectURL(new Blob([text], { type: 'text/csv' }));
+    const a = document.createElement('a'); a.href = url; a.download = name; document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 10000);
+    toast(`Exported ${rows.length} ${rows.length === 1 ? 'entry' : 'entries'}.`);
   }
 
   // ---------- Shopping list ----------
@@ -1441,7 +1643,7 @@
   // The back gesture: whatever is on top goes away.
   function goBack() {
     if (sheetRoot.innerHTML) return closeSheet();
-    if (S.view === 'calendar' || S.view === 'done' || S.view === 'shopping' || S.view === 'assistant') return goHome();
+    if (S.view === 'calendar' || S.view === 'done' || S.view === 'shopping' || S.view === 'assistant' || S.view === 'hours') return goHome();
   }
 
   function openSheet(html, onOpen) {
@@ -1486,7 +1688,7 @@
     let x0 = null, y0 = 0, dx = 0, target = null, horizontal = false;
     addEventListener('touchstart', e => {
       const t = e.touches[0];
-      const canGoBack = sheetRoot.innerHTML || S.view === 'calendar' || S.view === 'done' || S.view === 'shopping';
+      const canGoBack = sheetRoot.innerHTML || S.view === 'calendar' || S.view === 'done' || S.view === 'shopping' || S.view === 'hours' || S.view === 'assistant';
       if (!canGoBack || t.clientX > EDGE) { x0 = null; return; }
       x0 = t.clientX; y0 = t.clientY; dx = 0; horizontal = false;
       target = sheetRoot.querySelector('.sheet') || app;
@@ -2107,6 +2309,25 @@
         return toast(`Cleared ${gone.length} checked ${gone.length === 1 ? 'item' : 'items'}.`, 'Undo', () => gone.forEach(x => { const k = { ...x }; delete k.id; B.setItem(S.gid, x.id, k); }));
       }
       case 'chat-example': return askClaude(el.dataset.text);
+      case 'hours': return openView('hours', renderHours);
+      case 'hrs-who': S.hrsWho = el.dataset.uid; return renderHours();
+      case 'hrs-client': S.hrsClient = el.dataset.id; setPref('sp_client', S.hrsClient); return renderHours();
+      case 'hrs-period': S.hrsPeriod = el.dataset.key; return renderHours();
+      case 'hrs-filter': S.hrsFilter = S.hrsFilter === el.dataset.id ? '' : el.dataset.id; return renderHours();
+      case 'hrs-start': return startTimer();
+      case 'hrs-stop': if (sheetRoot.innerHTML) closeSheet(); return stopTimer(el.dataset.id);
+      case 'hrs-log': return openHours();
+      case 'hrs-edit': return openHours(el.dataset.id);
+      case 'hrs-delete': {
+        const e = (S.hours || []).find(x => x.id === el.dataset.id); if (!e) return;
+        B.deleteHours(S.gid, e.id); closeSheet();
+        const { id: _drop, ...back } = e;
+        return toast('Deleted.', 'Undo', () => B.setHours(S.gid, e.id, { ...back, createdBy: S.uid, createdAt: 'NOW', updatedAt: 'NOW' }));
+      }
+      case 'hrs-new-client': return openClient();
+      case 'hrs-edit-client': return openClient(el.dataset.id);
+      case 'hrs-clients': return openClients();
+      case 'hrs-export': return exportHours();
       case 'chat-clear': S.chat = []; saveChat(); return drawChat();
       case 'calendar': S.calMode = null; S.calMonth = null; S.calDay = null; return openView('calendar', renderCalendar);
       case 'cal-mode':

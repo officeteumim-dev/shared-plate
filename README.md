@@ -55,6 +55,7 @@ To open sign-up later (Phase 3): set `allowlist` and `ALLOWLIST` to `null`, and 
 - **Hebrew dates and holidays:** Settings → Calendar → Show Hebrew dates and holidays (diaspora observance, per person).
 - **Google Calendar / Apple Calendar:** Settings → Calendar → Make a calendar link. It's a private subscription feed (`/cal/<token>.ics`, served by the `calendarFeed` function); turning it off deletes the link.
 - **Shopping list:** the cart button. One shared list split into lists (Groceries, Amazon, or your own). Tap the box to check an item off, tap the name to move it to another list, add a note or delete it, and clear checked items when you're done. Stored in `groups/{groupId}/shopping`.
+- **Hours:** the clock button tracks time worked for clients. Pick who's working and the client, then **Start timer** (anyone can start or stop anyone's; starting a new one stops that person's last) or **Log time** by hand (1:30, 1.5 or 45m). Totals per client and per person for this week, last week, this month, last month or the year, with amounts for clients that have an hourly rate; tap a client to see only its entries, and **Export** a CSV for billing. Clients (name, optional rate, archived) live on the household as `clients`; entries are `groups/{g}/hours/{id}` (`client`, `who`, `date`, `minutes` or a running `startedAt`, `note`). The Claude connector and the assistant can log time (`log_time`) and read totals (`hours_summary`). Logic in `public/hours.js`.
 - **Comments:** every shopping item (speech bubble) and task (in its edit sheet) has a comment thread for asking the other person for details, with one-tap questions. Posting one sends the others a push notification (the `notifyComment` function), respecting quiet hours and Settings → When someone comments. Unread comments show a red dot. Stored in `…/comments` under the item, with `commentCount`, `lastComment*` and `seenBy` kept on the item.
 - **Daf Yomi reminder:** Settings → Calendar → Show the Daf Yomi → Daily Daf Yomi reminder, at one time or a time per day (`prefs.dafReminder`, sent by `sendReminders` within 30 minutes of the time, once a day).
 - **Shabbos and Yom Tov:** with Show Hebrew dates and holidays on, no notifications at all from an hour before sunset on Friday or Erev Yom Tov until 1½ hours after sunset when it ends (sunset from the time zone, `hebrew.js` → `restUntil`). Task reminders are held until afterward; comment and Daf Yomi notifications are skipped.
@@ -103,6 +104,7 @@ The decisions live in `public/logic.js` (`planReminder`), shared by the app, the
 | --- | --- |
 | `public/index.html`, `app.js`, `app.css` | The app |
 | `public/logic.js` | Lanes, order, categories, repeats, quiet hours and reminder decisions |
+| `public/hours.js` | Hours: durations, periods, totals, CSV |
 | `public/hebrew.js` | Hebrew dates and holidays (uses the browser's built-in Hebrew calendar) |
 | `functions/ics.js` | Builds the calendar feed |
 | `functions/mcp.js` | The Claude connector's tools |

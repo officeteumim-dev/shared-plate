@@ -480,3 +480,39 @@ section.lane .list + .cat-head { margin-top: 14px; }
 .links li { display: grid; grid-template-columns: 1fr auto; gap: 8px; align-items: start; }
 .task.cal-task.linked { background: color-mix(in srgb, var(--family) 8%, var(--surface)); }
 .task.cal-task.linked .bar { background: repeating-linear-gradient(180deg, var(--family) 0 5px, transparent 5px 8px); }
+
+/* ---------- Hours ---------- */
+.hrs-btn { position: relative; }
+.hrs-btn.running::after { content: ''; position: absolute; top: 7px; right: 7px; width: 9px; height: 9px; border-radius: 50%; background: #d64545; box-shadow: 0 0 0 2px var(--bg); }
+.top .btn.small { min-height: 40px; padding: 0 14px; font-size: 14px; }
+.hrs-start { display: grid; gap: 14px; background: var(--surface); border-radius: var(--radius-row); padding: 16px; margin-bottom: 14px; }
+.client-chips { display: flex; flex-wrap: wrap; gap: 8px; }
+.cat-chip.add { border-style: dashed; }
+.hrs-running { list-style: none; margin: 0 0 14px; padding: 0; display: grid; gap: 8px; }
+.hrs-running li { display: grid; grid-template-columns: auto 1fr auto auto; align-items: center; gap: 10px; background: var(--surface); border: 2px solid #d64545; border-radius: var(--radius-row); padding: 8px 8px 8px 14px; }
+.hrs-running .pulse { width: 10px; height: 10px; border-radius: 50%; background: #d64545; animation: blink 1.6s infinite ease-in-out; }
+.hrs-run-body { display: grid; text-align: left; background: none; border: 0; padding: 4px 0; min-height: 44px; min-width: 0; color: var(--ink); }
+.hrs-run-body span, .hrs-what span { color: var(--ink-2); font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.elapsed { font-variant-numeric: tabular-nums; font-weight: 700; }
+.btn.small { min-height: 44px; padding: 0 16px; }
+.hrs-table-wrap { overflow-x: auto; margin: 4px 0 18px; background: var(--surface); border-radius: var(--radius-row); }
+.hrs-sum { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; font-size: 15px; }
+.hrs-sum th, .hrs-sum td { padding: 8px 10px; text-align: right; white-space: nowrap; border-bottom: 1px solid var(--line); }
+.hrs-sum th[scope=row], .hrs-sum thead th:first-child { text-align: left; white-space: normal; }
+.hrs-sum thead th { font-size: 13px; color: var(--ink-2); font-weight: 700; }
+.hrs-sum th[scope=row] .link { padding: 0; min-height: 40px; text-align: left; font-weight: 700; text-decoration: none; }
+.hrs-sum tr.on th[scope=row] .link { text-decoration: underline; }
+.hrs-sum td small { display: block; color: var(--ink-2); font-size: 12px; }
+.hrs-sum tfoot th, .hrs-sum tfoot td { border-bottom: 0; font-weight: 700; }
+.hrs-list-head { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+.hrs-list-head h3 { margin: 0; font-size: 17px; }
+.hrs-entries { list-style: none; margin: 0 0 6px; padding: 0; display: grid; gap: 6px; }
+.hrs-entry { width: 100%; display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 10px; text-align: left; background: var(--surface); border: 0; border-radius: var(--radius-row); padding: 10px 14px; min-height: 56px; color: var(--ink); }
+.who-dot { width: 10px; height: 10px; border-radius: 50%; }
+.hrs-what { display: grid; min-width: 0; }
+.hrs-dur { font-weight: 700; font-variant-numeric: tabular-nums; }
+.hrs-foot { text-align: center; margin: 18px 0 90px; }
+.hrs-so-far { display: flex; align-items: center; min-height: 48px; font-weight: 700; font-size: 18px; }
+.client-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.client-row { width: 100%; display: flex; justify-content: space-between; gap: 10px; background: var(--surface-2); border: 0; border-radius: var(--radius-row); padding: 12px 14px; min-height: 52px; color: var(--ink); text-align: left; }
+.client-row span { color: var(--ink-2); }

@@ -8,7 +8,7 @@ const mcp = require('./mcp');
 const MAX_TURNS = 8;          // model calls per message, so a confused loop can't run up a bill
 const MAX_HISTORY = 16;       // earlier chat lines sent along for context
 const MAX_TEXT = 2000;
-const CHANGES = new Set(['add_task', 'update_task', 'complete_task', 'add_shopping_items', 'update_shopping_item', 'add_comment', 'take_task']);
+const CHANGES = new Set(['add_task', 'update_task', 'complete_task', 'add_shopping_items', 'update_shopping_item', 'add_comment', 'take_task', 'log_time']);
 
 const TOOLS = mcp.TOOLS.map(t => ({ name: t.name, description: t.description, input_schema: t.inputSchema }));
 
@@ -21,7 +21,7 @@ function systemPrompt(ctx) {
     `You are the assistant inside Shared Plate, the household task list of "${group.name || 'our household'}".`,
     `People: ${people.join(', ')}. It is now ${today} (${tz}).`,
     'Every task has one owner: a person, or "shared" for whoever takes it. Unless the person says otherwise, a task is theirs ("me").',
-    'Your job: turn what they say into tasks, events and shopping items using the tools, and answer questions about what is on the plate.',
+    'Your job: turn what they say into tasks, events and shopping items using the tools, log hours worked for clients (log_time), and answer questions about what is on the plate and hours worked.',
     'Act right away when the request is clear; work out relative dates ("tomorrow", "next Tuesday at 7") yourself. Ask one short question only when you really can\'t tell (who, or which task).',
     'Before changing or finishing an existing task, use list_tasks to find its id. Never delete or finish things the person didn\'t ask about.',
     'Reply in one or two short, plain sentences saying what you did (e.g. "Added Call the plumber for you, Tuesday 9am."). No markdown, no lists unless they ask for a list.'

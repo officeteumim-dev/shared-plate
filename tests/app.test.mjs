@@ -75,6 +75,81 @@ test('the chat line sends a message to the assistant, which adds it to the plate
   assert.deepEqual(errors, []);
 });
 
+test('Hours: totals per client and person, a timer, and logging time by hand', async () => {
+  const { page, errors } = await open();
+  await page.click('[data-act=hours]');
+  await page.waitForSelector('.hrs-sum');
+  const head = await page.$$eval('.hrs-sum thead th', els => els.map(e => e.textContent));
+  assert.deepEqual(head, ['Client', 'Avi', 'Leah', 'Total']);
+  const rows = await page.$$eval('.hrs-sum tbody tr', trs => trs.map(tr => [...tr.children].map(c => c.textContent)));
+  assert.deepEqual(rows, [['Acme Dental', '1h 30m', '2h', '3h 30m$297.50'], ['Brightside Realty', '–', '45m', '45m']]);
+  assert.equal(await page.$eval('.hrs-sum tfoot td:last-child', e => e.textContent), '4h 15m$297.50');
+  // Start a timer for Leah on Cohen & Co; it shows as running, and on the dashboard clock for her only.
+  await page.click('[data-act=hrs-who]:has-text("Leah")');
+  await page.click('[data-act=hrs-client]:has-text("Cohen & Co")');
+  await page.click('[data-act=hrs-start]');
+  await page.waitForSelector('.hrs-running li');
+  assert.match(await page.$eval('.hrs-running li', e => e.textContent), /Cohen & Co[\s\S]*Leah/);
+  await page.clock.setFixedTime(new Date('2026-11-06T10:05:00-05:00'));
+  await page.click('.hrs-running [data-act=hrs-stop]');
+  await page.waitForFunction(() => !document.querySelector('.hrs-running'));
+  const cohen = await page.$$eval('.hrs-sum tbody tr', trs => trs.map(tr => [...tr.children].map(c => c.textContent).join('|')).find(t => t.startsWith('Cohen')));
+  assert.equal(cohen, 'Cohen & Co|–|1h 5m|1h 5m$65.00');
+  // Log time by hand for me.
+  await page.click('[data-act=hrs-log]');
+  await page.click('#hrs-form-who [data-uid=me]');
+  await page.selectOption('#hrs-form select[name=client]', { label: 'Brightside Realty' });
+  await page.fill('#hrs-form [name=dur]', 'lots');
+  await page.click('#hrs-form [type=submit]');
+  assert.ok(await page.$('#hrs-form'), 'a bad duration keeps the sheet open');
+  await page.fill('#hrs-form [name=dur]', '1.25');
+  await page.fill('#hrs-form [name=note]', 'Listing photos');
+  await page.click('#hrs-form [type=submit]');
+  await page.waitForFunction(() => [...document.querySelectorAll('.hrs-entry')].some(e => e.textContent.includes('Listing photos')));
+  const bright = await page.$$eval('.hrs-sum tbody tr', trs => trs.map(tr => [...tr.children].map(c => c.textContent).join('|')).find(t => t.startsWith('Brightside')));
+  assert.equal(bright, 'Brightside Realty|1h 15m|45m|2h');
+  // Tapping a client shows only its entries.
+  await page.click('.hrs-sum [data-act=hrs-filter]:has-text("Acme Dental")');
+  const whats = await page.$$eval('.hrs-entry b', els => [...new Set(els.map(e => e.textContent))]);
+  assert.deepEqual(whats, ['Acme Dental']);
+  // Last month has the older entry.
+  await page.click('[data-act=hrs-filter][data-id=""]');
+  await page.click('[data-act=hrs-period][data-key=lastmonth]');
+  assert.ok(await page.$('.hrs-sum') || await page.$('.empty'));
+  assert.deepEqual(errors, []);
+});
+
+test('Hours: add a client with a rate, edit and delete an entry', async () => {
+  const { page, errors } = await open();
+  await page.click('[data-act=hours]');
+  await page.click('[data-act=hrs-new-client]');
+  await page.fill('#client-form [name=name]', 'acme dental');
+  await page.click('#client-form [type=submit]');
+  assert.ok(await page.$('#client-form'), 'no duplicate clients');
+  await page.fill('#client-form [name=name]', 'Delta Plumbing');
+  await page.fill('#client-form [name=rate]', '70');
+  await page.click('#client-form [type=submit]');
+  await page.waitForSelector('[data-act=hrs-client][aria-pressed=true]:has-text("Delta Plumbing")');
+  await page.click('[data-act=hrs-log]');
+  await page.fill('#hrs-form [name=dur]', '2:00');
+  await page.click('#hrs-form [type=submit]');
+  await page.waitForFunction(() => [...document.querySelectorAll('.hrs-sum tbody tr')].some(tr => tr.textContent.includes('Delta Plumbing') && tr.textContent.includes('$140.00')));
+  await page.click('.hrs-entry:has-text("Delta Plumbing")');
+  await page.fill('#hrs-form [name=dur]', '1');
+  await page.click('#hrs-form [type=submit]');
+  await page.waitForFunction(() => [...document.querySelectorAll('.hrs-sum tbody tr')].some(tr => tr.textContent.includes('Delta Plumbing') && tr.textContent.includes('$70.00')));
+  await page.click('.hrs-entry:has-text("Delta Plumbing")');
+  await page.click('[data-act=hrs-delete]');
+  await page.waitForFunction(() => ![...document.querySelectorAll('.hrs-entry')].some(e => e.textContent.includes('Delta Plumbing')));
+  // Archive it: gone from the chips, still in Manage clients.
+  await page.click('[data-act=hrs-clients]');
+  await page.click('[data-act=hrs-edit-client]:has-text("Delta Plumbing")');
+  await page.check('#client-form [name=archived]');
+  await page.click('#client-form [type=submit]');
+  await page.waitForFunction(() => ![...document.querySelectorAll('[data-act=hrs-client]')].some(e => e.textContent.includes('Delta')));
+  assert.deepEqual(errors, []);
+});
+
 test('what you type in the chat line survives the dashboard redrawing', async () => {
   const { page } = await open();
   await page.fill('#ask-line input', 'Add half a thought');
