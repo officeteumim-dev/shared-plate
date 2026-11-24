@@ -214,7 +214,7 @@
           ].filter(x => x.at >= d.from && x.at < d.to) }] };
         }
         if (name === 'assistant') {
-          // The preview has no Claude: it files "add …" / "remind me to …" messages as a task of yours, due tomorrow 9am.
+          // The preview has no AI model: it files "add …" / "remind me to …" messages as a task of yours, due tomorrow 9am.
           const m = /^(?:please\s+)?(?:add|remind me to|put)\s+(.+?)(?:\s+(?:on|to) (?:the|my) plate)?\.?$/i.exec(String(d.text || '').trim());
           if (!m) return { reply: 'In the preview I can only add things. Try “Add call the plumber”.', changed: [] };
           const title = m[1].charAt(0).toUpperCase() + m[1].slice(1), nid = 'n' + (++seq), due = L.startOfDay(now()) + 33 * 3600000;
@@ -656,8 +656,8 @@
       ${(S.inbox || []).length ? `<button class="inbox-banner" data-act="inbox">${ICON.inbox}<span><b>${S.inbox.length} ${S.inbox.length === 1 ? 'suggestion' : 'suggestions'}</b> from ${esc([...new Set(S.inbox.map(x => (S.links.find(l => l.id === x.fromGroup) || {}).name || 'family'))].join(', '))}</span><span class="go">Review</span></button>` : ''}
       <form class="ask-line" id="ask-line" autocomplete="off">
         <span class="spark" aria-hidden="true">${ICON.spark}</span>
-        <input name="text" maxlength="2000" placeholder="Ask Claude to add something…" aria-label="Ask Claude to add something" enterkeyhint="send">
-        <button class="send" type="submit" aria-label="Send to Claude">${ICON.send}</button>
+        <input name="text" maxlength="2000" placeholder="Ask the assistant to add something…" aria-label="Ask the assistant to add something" enterkeyhint="send">
+        <button class="send" type="submit" aria-label="Send to the assistant">${ICON.send}</button>
       </form>
       ${cats.length ? `<nav class="cats" aria-label="Categories">${['', ...cats].map(c => `<button class="cat-chip" data-act="cat" data-cat="${esc(c)}" aria-pressed="${(S.cat || '').toLowerCase() === c.toLowerCase()}">${esc(c || 'All')}</button>`).join('')}</nav>` : ''}
       <div class="lanes">
@@ -761,11 +761,11 @@
   function renderAssistant() {
     S.view = 'assistant';
     app.innerHTML = `<div class="assistant-view">
-      <header class="top"><button class="icon-btn" data-act="home" aria-label="Back">${ICON.back}</button><h1>Ask Claude</h1>
+      <header class="top"><button class="icon-btn" data-act="home" aria-label="Back">${ICON.back}</button><h1>Assistant</h1>
         <button class="btn quiet small" data-act="chat-clear" type="button">Clear</button></header>
       <ol class="msgs chat" id="chat" aria-live="polite"></ol>
       <form class="say ask-say" id="ask-say" autocomplete="off">
-        <textarea name="text" rows="1" maxlength="2000" placeholder="Message Claude" aria-label="Message Claude"></textarea>
+        <textarea name="text" rows="1" maxlength="2000" placeholder="Message the assistant" aria-label="Message the assistant"></textarea>
         <button class="btn" type="submit" aria-label="Send">${ICON.send}</button>
       </form></div>`;
     drawChat();
@@ -780,9 +780,9 @@
     const box = app.querySelector('#chat'); if (!box) return;
     const log = chatLog();
     box.innerHTML = (log.length ? log.map(m => `<li class="msg${m.role === 'user' ? ' mine' : ''}${m.error ? ' error' : ''}"><div class="bubble">${esc(m.text)}</div>${m.changed ? '<div class="when">Updated the plate</div>' : ''}</li>`).join('')
-      : `<li class="chat-intro"><p>Tell Claude what needs doing and it goes on the plate. It knows who’s in the household and today’s date.</p>
+      : `<li class="chat-intro"><p>Tell the assistant what needs doing and it goes on the plate. It knows who’s in the household and today’s date.</p>
         <div class="quick">${ASK_EXAMPLES.map(q => `<button type="button" class="cat-chip small" data-act="chat-example" data-text="${esc(q)}">${esc(q)}</button>`).join('')}</div></li>`)
-      + (S.asking ? '<li class="msg typing"><div class="bubble" aria-label="Claude is working"><i></i><i></i><i></i></div></li>' : '');
+      + (S.asking ? '<li class="msg typing"><div class="bubble" aria-label="The assistant is working"><i></i><i></i><i></i></div></li>' : '');
     box.lastElementChild && box.lastElementChild.scrollIntoView({ block: 'end' });
     const btn = app.querySelector('#ask-say .btn'); if (btn) btn.disabled = !!S.asking;
   }
@@ -793,10 +793,10 @@
     S.asking = true; drawChat();
     try {
       const r = await B.call('assistant', { text, history });
-      if (r && r.notSetUp) log.push({ role: 'assistant', error: true, text: 'Claude isn’t set up here yet: the household needs an Anthropic API key added (see the README, “Ask Claude”).' });
+      if (r && r.notSetUp) log.push({ role: 'assistant', error: true, text: 'The assistant isn’t set up yet: it needs a free Gemini API key added (see the README, “Assistant”).' });
       else log.push({ role: 'assistant', text: (r && r.reply) || 'Done.', changed: !!(r && r.changed && r.changed.length) });
     } catch (e) {
-      log.push({ role: 'assistant', error: true, text: (e && e.message && !/internal/i.test(e.message)) ? e.message : 'Claude didn’t answer. Check your connection and try again.' });
+      log.push({ role: 'assistant', error: true, text: (e && e.message && !/internal/i.test(e.message)) ? e.message : 'The assistant didn’t answer. Check your connection and try again.' });
     }
     S.asking = false; saveChat();
     if (S.view === 'assistant') drawChat();

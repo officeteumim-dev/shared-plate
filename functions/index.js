@@ -461,37 +461,57 @@ exports.answerSuggestion = onCall(async req => {
 });
 
 // ---------- In-app assistant ----------
-// The chat line in the app: Claude, acting as the person chatting, with the same tools as the Claude connector.
-// Needs an Anthropic API key: the ANTHROPIC_API_KEY GitHub secret, which the deploy writes into functions/.env.
-// Until it's there, the app says the assistant isn't set up. ASSISTANT_MODEL in .env overrides the model.
+// The chat line in the app: an AI model acting as the person chatting, with the same tools as the Claude connector.
+// It runs on Gemini when GEMINI_API_KEY is set (Google's free tier), otherwise on Claude when ANTHROPIC_API_KEY is
+// set. The deploy writes those GitHub secrets into functions/.env. With neither, the app says it isn't set up.
+// GEMINI_MODEL / ASSISTANT_MODEL in .env override the models.
 const Assistant = require('./assistant');
+const Gemini = require('./gemini');
 const recentAsks = new Map(); // uid → recent request times (per instance), a simple brake on runaway use
+
+const postJson = async (url, headers, body) => {
+  const r = await fetch(url, { method: 'POST', headers, body: JSON.stringify(body) });
+  return { ok: r.ok, status: r.status, json: await r.json().catch(() => ({})) };
+};
+function modelCaller() {
+  if (process.env.GEMINI_API_KEY) {
+    const call = Gemini.caller({ key: process.env.GEMINI_API_KEY, model: process.env.GEMINI_MODEL || 'gemini-3.8-flash', post: postJson });
+    return async req => {
+      try { return await call(req); } catch (e) {
+        logger.error('assistant (Gemini) call failed', e.status, e.body && e.body.error);
+        throw new HttpsError(e.status === 429 ? 'resource-exhausted' : 'unavailable',
+          e.status === 429 ? 'The free assistant has hit its limit for now. Try again in a minute (or tomorrow, if it’s the daily limit).'
+            : e.status === 400 || e.status === 403 ? 'The assistant’s Gemini key isn’t working. Check GEMINI_API_KEY.' : 'The assistant didn’t answer. Try again in a moment.');
+      }
+    };
+  }
+  if (process.env.ANTHROPIC_API_KEY) {
+    const key = process.env.ANTHROPIC_API_KEY, model = process.env.ASSISTANT_MODEL || 'claude-sonnet-5-5';
+    return async ({ system, messages, tools }) => {
+      const r = await postJson('https://api.anthropic.com/v1/messages',
+        { 'content-type': 'application/json', 'x-api-key': key, 'anthropic-version': '2023-06-01' },
+        { model, max_tokens: 1024, system, messages, tools });
+      if (!r.ok) {
+        logger.error('assistant (Claude) call failed', r.status, r.json && r.json.error);
+        throw new HttpsError('unavailable', r.status === 401 ? 'The assistant’s API key isn’t working. Check ANTHROPIC_API_KEY.' : 'The assistant didn’t answer. Try again in a moment.');
+      }
+      return r.json;
+    };
+  }
+  return null;
+}
 
 exports.assistant = onCall({ timeoutSeconds: 120, memory: '256MiB' }, async req => {
   const d = req.data || {};
   const group = await memberOf(req, d.groupId);
-  const key = process.env.ANTHROPIC_API_KEY;
-  if (!key) return { notSetUp: true };
+  const callModel = modelCaller();
+  if (!callModel) return { notSetUp: true };
   const uid = req.auth.uid, t = Date.now();
   const recent = (recentAsks.get(uid) || []).filter(x => t - x < 60 * 60 * 1000);
   if (recent.length >= 60) throw new HttpsError('resource-exhausted', 'That’s a lot of messages this hour. Try again in a little while.');
   recentAsks.set(uid, [...recent, t]);
   const user = (await db.doc(`users/${uid}`).get()).data() || {};
   const ctx = toolContext(d.groupId, uid, group, user);
-  const model = process.env.ASSISTANT_MODEL || 'claude-sonnet-5-5';
-  const callModel = async ({ system, messages, tools }) => {
-    const r = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json', 'x-api-key': key, 'anthropic-version': '2023-06-01' },
-      body: JSON.stringify({ model, max_tokens: 1024, system, messages, tools })
-    });
-    const body = await r.json().catch(() => ({}));
-    if (!r.ok) {
-      logger.error('assistant model call failed', r.status, body && body.error);
-      throw new HttpsError('unavailable', r.status === 401 ? 'The assistant’s API key isn’t working. Check ANTHROPIC_API_KEY.' : 'Claude didn’t answer. Try again in a moment.');
-    }
-    return body;
-  };
   const out = await Assistant.run({ history: d.history, text: d.text, ctx, callModel });
   return { reply: out.reply, changed: out.changed };
 });
