@@ -53,7 +53,7 @@ test('overdue tasks sit at the top of their own tile, with nothing above the til
   assert.deepEqual(errors, []);
 });
 
-test('the chat line sends a message to Claude, which adds it to the plate', async () => {
+test('the chat line sends a message to the assistant, which adds it to the plate', async () => {
   const { page, errors } = await open();
   await page.fill('#ask-line input', 'Add call the dentist');
   await page.press('#ask-line input', 'Enter');

@@ -13,6 +13,7 @@ jobs:
     env:
       SA: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
       ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
     steps:
       - uses: actions/checkout@v4
         if: env.SA != ''
@@ -25,9 +26,13 @@ jobs:
         working-directory: functions
         run: npm install --omit=dev
       - name: Assistant key
-        if: env.SA != '' && env.ANTHROPIC_API_KEY != ''
+        if: env.SA != '' && (env.GEMINI_API_KEY != '' || env.ANTHROPIC_API_KEY != '')
         working-directory: functions
-        run: printf 'ANTHROPIC_API_KEY=%s\n' "$ANTHROPIC_API_KEY" > .env
+        run: |
+          : > .env
+          [ -n "$GEMINI_API_KEY" ] && printf 'GEMINI_API_KEY=%s\n' "$GEMINI_API_KEY" >> .env
+          [ -n "$ANTHROPIC_API_KEY" ] && printf 'ANTHROPIC_API_KEY=%s\n' "$ANTHROPIC_API_KEY" >> .env
+          true
       - name: Deploy
         if: env.SA != ''
         run: |
