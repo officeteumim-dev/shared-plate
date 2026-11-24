@@ -5,3 +5,4 @@ functions/hebrew.js
 .firebase/
 firebase-debug.log*
 firestore-debug.log*
+functions/.env

@@ -43,6 +43,7 @@ To open sign-up later (Phase 3): set `allowlist` and `ALLOWLIST` to `null`, and 
 
 - **Start a household** after signing in, then share the invite link or 8-character code from Settings. The other person signs in and joins with it.
 - **Add** with the button at the bottom right. Pick whose it is: you, them, or Shared. Due date, repeat and a note are optional.
+- **Overdue** tasks sit at the top of their own tile, under a red *Overdue* heading.
 - **Done:** tap the circle or swipe a task to the right. Undo from the message that appears, or from **Completed**.
 - **Snooze** from a task's edit sheet. It disappears until that date (8am) and comes back with a notification.
 - **Repeats:** finishing a repeating task puts the next one on the plate automatically.
@@ -58,6 +59,7 @@ To open sign-up later (Phase 3): set `allowlist` and `ALLOWLIST` to `null`, and 
 - **Daf Yomi reminder:** Settings → Calendar → Show the Daf Yomi → Daily Daf Yomi reminder, at one time or a time per day (`prefs.dafReminder`, sent by `sendReminders` within 30 minutes of the time, once a day).
 - **Shabbos and Yom Tov:** with Show Hebrew dates and holidays on, no notifications at all from an hour before sunset on Friday or Erev Yom Tov until 1½ hours after sunset when it ends (sunset from the time zone, `hebrew.js` → `restUntil`). Task reminders are held until afterward; comment and Daf Yomi notifications are skipped.
 - **Linked families:** Settings → Linked families links your household with another (grandparents, say) by a 7-day link code. Each side chooses what the other sees (Nothing, Events you share via a task's *Share with linked families* switch, or the whole calendar) and whether the other can send it events and reminders. Suggestions wait in the inbox (banner on the dashboard) until either of you approves, choosing whose plate, or declines; the sender is told either way. Shared events show on the calendar, read-only. All of it runs through callable functions (`makeLinkCode`, `useLinkCode`, `updateLink`, `unlink`, `linkedCalendar`, `sendSuggestion`, `answerSuggestion`; helpers in `functions/family.js`). Data: `groups/{g}/links/{otherGroupId}`, `groups/{g}/inbox/{id}`, `linkCodes/{code}`.
+- **Ask Claude (in the app):** the chat line on the dashboard opens a chat with Claude, who adds, changes, finishes and looks up tasks and shopping items for you, with the same tools as the Claude connector (`functions/assistant.js`, run by the `assistant` callable). The chat is kept on that phone only. It needs an Anthropic API key: create one at console.anthropic.com (Settings → API keys; add a few dollars of credit and a monthly limit), then in GitHub → Settings → Secrets and variables → Actions add it as `ANTHROPIC_API_KEY` and re-run the *Deploy* workflow. The deploy writes it into `functions/.env` (never committed). Until then the chat says it isn't set up. `ASSISTANT_MODEL` in that file overrides the model (default `claude-sonnet-5-5`).
 - **Claude:** Settings → Connect to Claude makes a private link for each person. Add it in claude.ai under Customize → Connectors → Add custom connector (No sign in). Claude can then list, add, update, snooze, take and finish tasks, acting as that person (`functions/mcp.js`, served by `claudeConnector` at `/mcp/<token>`).
 - **Import:** Settings → Import tasks takes an import code or link (see `openImport` in `app.js` for the format).
 
@@ -104,6 +106,7 @@ The decisions live in `public/logic.js` (`planReminder`), shared by the app, the
 | `public/hebrew.js` | Hebrew dates and holidays (uses the browser's built-in Hebrew calendar) |
 | `functions/ics.js` | Builds the calendar feed |
 | `functions/mcp.js` | The Claude connector's tools |
+| `functions/assistant.js` | The in-app Ask Claude chat (uses the same tools) |
 | `public/config.js` | Firebase settings, push key and allowlist |
 | `public/sw.js` | Offline shell and push notifications |
 | `functions/index.js` | Reminders and joining by code |

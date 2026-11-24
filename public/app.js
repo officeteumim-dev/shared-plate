@@ -26,6 +26,7 @@
     plus: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>',
     gear: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3.2"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>',
     chat: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 12.5a7.5 7.5 0 0 1-10.9 6.7L4 20.5l1.4-4.4A7.5 7.5 0 1 1 20 12.5z"/></svg>',
+    spark: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2.5c.5 4.6 2.9 7 7.5 7.5v.1c-4.6.5-7 2.9-7.5 7.5h-.1C11.4 13 9 10.6 4.4 10.1V10C9 9.5 11.4 7.1 11.9 2.5z"/><path d="M19 15.5c.2 1.8 1.2 2.8 3 3-1.8.2-2.8 1.2-3 3-.2-1.8-1.2-2.8-3-3 1.8-.2 2.8-1.2 3-3z"/></svg>',
     send: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h13M13 6l6 6-6 6"/></svg>',
     inbox: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 13l2.5-7.5h11L20 13v5.5a1.5 1.5 0 0 1-1.5 1.5h-13A1.5 1.5 0 0 1 4 18.5z"/><path d="M4 13h4.5l1.5 2.5h4l1.5-2.5H20"/></svg>',
     cart: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 4h2.2l2.3 11.2a1.6 1.6 0 0 0 1.6 1.3h8.1a1.6 1.6 0 0 0 1.6-1.2L20.5 8H6.1"/><circle cx="9.5" cy="20" r="1.3"/><circle cx="17" cy="20" r="1.3"/></svg>',
@@ -211,6 +212,15 @@
             { id: 'f1', title: 'Grandpa’s birthday dinner', at: at(13, 18), who: 'Grandpa' },
             { id: 'f2', title: 'Grandma’s doctor visit', at: at(4, 10), who: 'Grandma' }
           ].filter(x => x.at >= d.from && x.at < d.to) }] };
+        }
+        if (name === 'assistant') {
+          // The preview has no Claude: it files "add …" / "remind me to …" messages as a task of yours, due tomorrow 9am.
+          const m = /^(?:please\s+)?(?:add|remind me to|put)\s+(.+?)(?:\s+(?:on|to) (?:the|my) plate)?\.?$/i.exec(String(d.text || '').trim());
+          if (!m) return { reply: 'In the preview I can only add things. Try “Add call the plumber”.', changed: [] };
+          const title = m[1].charAt(0).toUpperCase() + m[1].slice(1), nid = 'n' + (++seq), due = L.startOfDay(now()) + 33 * 3600000;
+          tasks.set(nid, { title, notes: '', owner: me, claimedBy: null, status: 'open', dueAt: due, repeat: 'none', createdBy: me, createdAt: now() });
+          emit();
+          return { reply: `Added ${title} for you, tomorrow at 9am.`, changed: ['add_task'] };
         }
         throw new Error('Unknown action');
       },
@@ -486,7 +496,7 @@
 
   function startGroup(gid) {
     S.unsub.splice(1).forEach(u => u && u());
-    S.gid = gid; S.loaded = false;
+    S.gid = gid; S.loaded = false; S.chat = null;
     try { localStorage.setItem('sp_group', gid); } catch (e) {}
     const lost = e => {
       if (/permission/.test(e?.code || '')) {
@@ -605,6 +615,7 @@
     if (S.view === 'done') return renderDone();
     if (S.view === 'shopping') return renderShopping();
     if (S.view === 'calendar') return renderCalendar();
+    if (S.view === 'assistant') { if (!app.querySelector('.assistant-view')) renderAssistant(); return; }
     S.view = 'home';
     const t = now();
     const cats = L.categories(S.open.filter(x => L.effectiveStatus(x, t) === 'open'));
@@ -618,6 +629,7 @@
     l.today = l.today.filter(x => dailyShowing(x, t));
     const todayN = l.today.length;
     const snoozedIn = k => l.snoozed.filter(x => L.laneOf(x, S.uid) === k);
+    const asking = app.querySelector('#ask-line input'), askText = asking ? asking.value : '', askFocus = asking && document.activeElement === asking;
     app.innerHTML = `
       <header class="top">
         <h1>${esc(S.group.name || 'Shared Plate')}</h1>
@@ -642,7 +654,11 @@
         </div>
       </section>
       ${(S.inbox || []).length ? `<button class="inbox-banner" data-act="inbox">${ICON.inbox}<span><b>${S.inbox.length} ${S.inbox.length === 1 ? 'suggestion' : 'suggestions'}</b> from ${esc([...new Set(S.inbox.map(x => (S.links.find(l => l.id === x.fromGroup) || {}).name || 'family'))].join(', '))}</span><span class="go">Review</span></button>` : ''}
-      ${todayN ? `<nav class="today" aria-label="Due today">${l.today.map(x => chip(x, t)).join('')}</nav>` : ''}
+      <form class="ask-line" id="ask-line" autocomplete="off">
+        <span class="spark" aria-hidden="true">${ICON.spark}</span>
+        <input name="text" maxlength="2000" placeholder="Ask Claude to add something…" aria-label="Ask Claude to add something" enterkeyhint="send">
+        <button class="send" type="submit" aria-label="Send to Claude">${ICON.send}</button>
+      </form>
       ${cats.length ? `<nav class="cats" aria-label="Categories">${['', ...cats].map(c => `<button class="cat-chip" data-act="cat" data-cat="${esc(c)}" aria-pressed="${(S.cat || '').toLowerCase() === c.toLowerCase()}">${esc(c || 'All')}</button>`).join('')}</nav>` : ''}
       <div class="lanes">
         ${lane('mine', 'Mine', l.mine, t, 'Nothing on your plate. Nice.', snoozedIn('mine'))}
@@ -652,6 +668,9 @@
       <div class="more-row"><button class="btn line" data-act="show-done">Completed</button></div>
       <button class="fab" data-act="add" aria-label="Add a task">${ICON.plus}<span>Add</span></button>`;
     bindSwipes(); bindReorder();
+    const ask = app.querySelector('#ask-line');
+    ask.text.value = askText; if (askFocus) ask.text.focus();
+    ask.onsubmit = e => { e.preventDefault(); const v = ask.text.value.trim(); if (!v) return ask.text.focus(); ask.text.value = ''; openAssistant(v); };
     app.querySelectorAll('details.drawer').forEach(d => d.addEventListener('toggle', () => {
       const set = S.openDrawers || (S.openDrawers = new Set());
       if (d.open) set.add(d.dataset.drawer); else set.delete(d.dataset.drawer);
@@ -675,26 +694,21 @@
       <text x="56" y="67" text-anchor="middle" font-size="32" font-weight="700">${total}</text></svg>`;
   }
 
-  function chip(x, t) {
-    const k = L.laneOf(x, S.uid), late = L.isOverdue(x, t);
-    const who = k === 'mine' ? '' : k === 'shared' ? ', shared' : `, ${nameOf(L.responsible(x))}`;
-    return `<button class="chip ${k}" data-act="edit" data-id="${esc(x.id)}">
-      <span class="when ${late ? 'late' : ''}">${late ? 'Overdue, ' : ''}${esc(L.fmtWhen(x.dueAt, t))}${esc(who)}</span>
-      <span class="t">${prio(x)}${esc(x.title)}</span></button>`;
-  }
-
   function lane(k, title, all, t, empty, snoozed) {
     const daily = all.filter(isDaily);
     const waiting = all.filter(x => isWeekly(x) && !dailyShowing(x, t)); // weekly tasks not due within a day: only on the calendar
     const far = all.filter(x => recurLead(x) == null && farOut(x, t));
-    const list = all.filter(x => (recurLead(x) != null ? dailyShowing(x, t) : !farOut(x, t)));
+    const shown = all.filter(x => (recurLead(x) != null ? dailyShowing(x, t) : !farOut(x, t)));
+    const late = shown.filter(x => L.isOverdue(x, t)).sort((a, b) => L.toMs(a.dueAt) - L.toMs(b.dueAt));
+    const list = shown.filter(x => !L.isOverdue(x, t));
     const open = S.openDrawers || (S.openDrawers = new Set());
     const drawer = (id, label, items, snz) => items.length ? `<details class="drawer" data-drawer="${k}-${id}" ${open.has(`${k}-${id}`) ? 'open' : ''}>
         <summary>${label} <span class="n">${items.length}</span></summary>
         <ul class="list">${items.map(x => row(x, t, k, snz)).join('')}</ul></details>` : '';
     return `<section class="lane ${k}" aria-label="${esc(title)}">
-      <div class="lane-head"><h3>${esc(title)}</h3><span class="count">${list.length}</span></div>
-      ${!list.length ? `<div class="empty">${esc(S.cat ? `Nothing in ${S.cat} here.` : daily.length || waiting.length || far.length || snoozed.length ? 'Nothing due right now.' : empty)}</div>`
+      <div class="lane-head"><h3>${esc(title)}</h3><span class="count">${shown.length}</span></div>
+      ${late.length ? `<h4 class="cat-head late">Overdue</h4><ul class="list overdue">${late.map(x => row(x, t, k, false)).join('')}</ul>${list.length && !L.byCategory(list).some(g => g.name) ? '<h4 class="cat-head">Coming up</h4>' : ''}` : ''}
+      ${!list.length ? late.length ? '' : `<div class="empty">${esc(S.cat ? `Nothing in ${S.cat} here.` : daily.length || waiting.length || far.length || snoozed.length ? 'Nothing due right now.' : empty)}</div>`
         : (() => {
           const groups = L.byCategory(list);
           const named = groups.some(g => g.name) && !S.cat;
@@ -728,6 +742,65 @@
         ${sortable ? `<button class="grip" type="button" aria-label="Drag to reorder: ${esc(x.title)}" data-id="${esc(x.id)}">${ICON.grip}</button>` : '<span></span>'}
         ${nudge ? `<div class="nudge">Waiting since ${esc(L.fmtWhen(x.createdAt, t, false))}. Could one of you take it?</div>` : ''}
       </div></li>`;
+  }
+
+  // ---------- Assistant ----------
+  // A chat with Claude, who puts things on the plate for you (the `assistant` function, with the Claude connector's
+  // tools). The conversation is kept on this phone only; what Claude adds shows up on the plate for everyone.
+  const CHAT_KEY = 'sp_chat';
+  const ASK_EXAMPLES = ['Remind me to call the plumber tomorrow at 10', 'Add milk and eggs to groceries', 'Dentist for the kids next Tuesday at 4, shared', 'What’s on my plate this week?'];
+  function chatLog() {
+    if (!S.chat) { try { S.chat = JSON.parse(localStorage.getItem(CHAT_KEY + ':' + S.gid) || '[]'); } catch (e) { S.chat = []; } }
+    return S.chat;
+  }
+  function saveChat() { try { localStorage.setItem(CHAT_KEY + ':' + S.gid, JSON.stringify(S.chat.slice(-40))); } catch (e) {} }
+  function openAssistant(text) {
+    openView('assistant', renderAssistant);
+    if (text) askClaude(text);
+  }
+  function renderAssistant() {
+    S.view = 'assistant';
+    app.innerHTML = `<div class="assistant-view">
+      <header class="top"><button class="icon-btn" data-act="home" aria-label="Back">${ICON.back}</button><h1>Ask Claude</h1>
+        <button class="btn quiet small" data-act="chat-clear" type="button">Clear</button></header>
+      <ol class="msgs chat" id="chat" aria-live="polite"></ol>
+      <form class="say ask-say" id="ask-say" autocomplete="off">
+        <textarea name="text" rows="1" maxlength="2000" placeholder="Message Claude" aria-label="Message Claude"></textarea>
+        <button class="btn" type="submit" aria-label="Send">${ICON.send}</button>
+      </form></div>`;
+    drawChat();
+    const form = app.querySelector('#ask-say');
+    const send = () => { const v = form.text.value.trim(); if (!v || S.asking) return; form.text.value = ''; form.text.style.height = ''; askClaude(v); };
+    form.onsubmit = e => { e.preventDefault(); send(); };
+    form.text.addEventListener('keydown', e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); } });
+    form.text.addEventListener('input', () => { form.text.style.height = 'auto'; form.text.style.height = Math.min(140, form.text.scrollHeight) + 'px'; });
+    if (!chatLog().length && !S.asking) form.text.focus();
+  }
+  function drawChat() {
+    const box = app.querySelector('#chat'); if (!box) return;
+    const log = chatLog();
+    box.innerHTML = (log.length ? log.map(m => `<li class="msg${m.role === 'user' ? ' mine' : ''}${m.error ? ' error' : ''}"><div class="bubble">${esc(m.text)}</div>${m.changed ? '<div class="when">Updated the plate</div>' : ''}</li>`).join('')
+      : `<li class="chat-intro"><p>Tell Claude what needs doing and it goes on the plate. It knows who’s in the household and today’s date.</p>
+        <div class="quick">${ASK_EXAMPLES.map(q => `<button type="button" class="cat-chip small" data-act="chat-example" data-text="${esc(q)}">${esc(q)}</button>`).join('')}</div></li>`)
+      + (S.asking ? '<li class="msg typing"><div class="bubble" aria-label="Claude is working"><i></i><i></i><i></i></div></li>' : '');
+    box.lastElementChild && box.lastElementChild.scrollIntoView({ block: 'end' });
+    const btn = app.querySelector('#ask-say .btn'); if (btn) btn.disabled = !!S.asking;
+  }
+  async function askClaude(text) {
+    const log = chatLog();
+    const history = log.filter(m => !m.error).slice(-16).map(m => ({ role: m.role, text: m.text }));
+    log.push({ role: 'user', text }); saveChat();
+    S.asking = true; drawChat();
+    try {
+      const r = await B.call('assistant', { text, history });
+      if (r && r.notSetUp) log.push({ role: 'assistant', error: true, text: 'Claude isn’t set up here yet: the household needs an Anthropic API key added (see the README, “Ask Claude”).' });
+      else log.push({ role: 'assistant', text: (r && r.reply) || 'Done.', changed: !!(r && r.changed && r.changed.length) });
+    } catch (e) {
+      log.push({ role: 'assistant', error: true, text: (e && e.message && !/internal/i.test(e.message)) ? e.message : 'Claude didn’t answer. Check your connection and try again.' });
+    }
+    S.asking = false; saveChat();
+    if (S.view === 'assistant') drawChat();
+    else toast(log[log.length - 1].text.slice(0, 120), 'Open', () => openAssistant());
   }
 
   function renderDone() {
@@ -1368,7 +1441,7 @@
   // The back gesture: whatever is on top goes away.
   function goBack() {
     if (sheetRoot.innerHTML) return closeSheet();
-    if (S.view === 'calendar' || S.view === 'done' || S.view === 'shopping') return goHome();
+    if (S.view === 'calendar' || S.view === 'done' || S.view === 'shopping' || S.view === 'assistant') return goHome();
   }
 
   function openSheet(html, onOpen) {
@@ -2033,6 +2106,8 @@
         gone.forEach(x => B.deleteItem(S.gid, x.id));
         return toast(`Cleared ${gone.length} checked ${gone.length === 1 ? 'item' : 'items'}.`, 'Undo', () => gone.forEach(x => { const k = { ...x }; delete k.id; B.setItem(S.gid, x.id, k); }));
       }
+      case 'chat-example': return askClaude(el.dataset.text);
+      case 'chat-clear': S.chat = []; saveChat(); return drawChat();
       case 'calendar': S.calMode = null; S.calMonth = null; S.calDay = null; return openView('calendar', renderCalendar);
       case 'cal-mode':
         if (el.dataset.mode === S.calMode) return;

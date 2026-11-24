@@ -40,12 +40,47 @@ test('dashboard shows the three lanes with the other person’s name', async () 
   assert.deepEqual(errors, []);
 });
 
-test('today strip lists overdue and today’s tasks, not later ones', async () => {
+test('overdue tasks sit at the top of their own tile, with nothing above the tiles', async () => {
+  const { page, errors } = await open();
+  assert.equal(await page.$('nav.today'), null, 'no strip above the tiles');
+  const firstHead = await page.$eval('section.lane.mine .cat-head', e => e.textContent);
+  assert.equal(firstHead, 'Overdue');
+  const late = await page.$$eval('section.lane.mine > ul.overdue .title', (els, f) => els.map(new Function('return ' + f)()), titleText.toString());
+  assert.deepEqual(late, ['Pay the electric bill']);
+  // The overdue list comes before the tile's other tasks.
+  const order = await page.$$eval('section.lane.mine > ul', els => els.map(e => e.classList.contains('overdue')));
+  assert.equal(order[0], true);
+  assert.deepEqual(errors, []);
+});
+
+test('the chat line sends a message to Claude, which adds it to the plate', async () => {
+  const { page, errors } = await open();
+  await page.fill('#ask-line input', 'Add call the dentist');
+  await page.press('#ask-line input', 'Enter');
+  await page.waitForSelector('.assistant-view');
+  await page.waitForFunction(() => [...document.querySelectorAll('#chat .msg:not(.mine) .bubble')].some(e => e.textContent.includes('Call the dentist')));
+  const mine = await page.$$eval('#chat .msg.mine .bubble', els => els.map(e => e.textContent));
+  assert.deepEqual(mine, ['Add call the dentist']);
+  assert.ok(await page.$('#chat .msg .when'), 'says the plate was updated');
+  // Back on the dashboard it's on my tile, and the chat is still there next time.
+  await page.click('[data-act=home]');
+  assert.ok((await laneTitles(page, 'mine')).includes('Call the dentist'));
+  await page.fill('#ask-line input', 'what is up');
+  await page.click('#ask-line .send');
+  await page.waitForFunction(() => document.querySelectorAll('#chat .msg:not(.mine)').length === 2);
+  assert.equal(await page.$$eval('#chat .msg.mine', e => e.length), 2);
+  // Examples show on an empty chat.
+  await page.click('[data-act=chat-clear]');
+  assert.ok(await page.$('[data-act=chat-example]'));
+  assert.deepEqual(errors, []);
+});
+
+test('what you type in the chat line survives the dashboard redrawing', async () => {
   const { page } = await open();
-  const chips = await page.$$eval('.today .chip .t', (els, f) => els.map(new Function('return ' + f)()), titleText.toString());
-  assert.ok(chips.includes('Pay the electric bill'));
-  assert.ok(chips.includes('Pick up challah'));
-  assert.ok(!chips.includes('Renew car registration'));
+  await page.fill('#ask-line input', 'Add half a thought');
+  await page.click('section.lane.shared .row-wrap:has-text("Order birthday gift") [data-act=take]');
+  await page.waitForFunction(() => [...document.querySelectorAll('section.lane.mine .title')].some(e => e.textContent.includes('Order birthday gift')));
+  assert.equal(await page.inputValue('#ask-line input'), 'Add half a thought');
 });
 
 test('an old unclaimed shared task gets a gentle nudge', async () => {
@@ -238,7 +273,7 @@ test('colors can be changed in Settings and show in the lanes and calendar', asy
 test('tasks are grouped by category inside each tile, and the filter shows one category', async () => {
   const { page, errors } = await open();
   const heads = await page.$$eval('section.lane.mine .cat-head', els => els.map(e => e.textContent));
-  assert.deepEqual(heads, ['Car', 'House', 'Work', 'Other']);
+  assert.deepEqual(heads, ['Overdue', 'Car', 'Work', 'Other'], 'overdue first, then categories (the only House task is overdue)');
   await page.click('.cats [data-cat="Car"]');
   assert.deepEqual((await laneTitles(page, 'mine')).sort(), ['Renew car registration', 'Rotate the tires']);
   assert.equal(await page.locator('section.lane.mine .cat-head').count(), 0);
