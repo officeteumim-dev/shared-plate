@@ -194,6 +194,12 @@ const TOOLS = [
     name: 'take_task',
     description: 'Take an unclaimed shared task, so it moves to my plate.',
     inputSchema: { type: 'object', properties: { task_id: { type: 'string' } }, required: ['task_id'], additionalProperties: false }
+  },
+  {
+    name: 'delete_task',
+    description: 'Delete tasks for good (not the same as finishing them). Only when the person asks, e.g. to remove duplicates. Up to 50 ids at once.',
+    inputSchema: { type: 'object', properties: { task_ids: { type: 'array', items: { type: 'string' }, description: 'Ids from list_tasks.' } }, required: ['task_ids'], additionalProperties: false },
+    annotations: { destructiveHint: true }
   }
 ];
 
@@ -449,6 +455,13 @@ async function callTool(name, args, ctx) {
       return [`Comments on ${label}:`, ...list.map(c => `  ${nameOf(c.by)}, ${fmt(c.at, tz)}: ${c.text}`)].join('\n');
     }
 
+    case 'delete_task': {
+      const ids = [...new Set((Array.isArray(args.task_ids) ? args.task_ids : [args.task_ids]).map(x => clean(x, 60)).filter(Boolean))].slice(0, 50);
+      if (!ids.length) throw new UserError('Say which tasks (ids from list_tasks).');
+      const gone = [], missing = [];
+      for (const id of ids) { const t = await store.get(id); if (t) { await store.remove(id); gone.push(t.title); } else missing.push(id); }
+      return `Deleted ${gone.length} task${gone.length === 1 ? '' : 's'}${gone.length ? ': ' + [...new Set(gone)].join(', ') : ''}.${missing.length ? ` Not found: ${missing.join(', ')}.` : ''}`;
+    }
     case 'take_task': {
       const t = await getTask(args.task_id);
       if (t.owner !== 'shared') throw new UserError(`That isn’t a shared task; it belongs to ${nameOf(t.owner)}.`);
