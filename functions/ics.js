@@ -48,7 +48,7 @@ function rrule(repeat) {
   return null;
 }
 
-// tasks: [{ id, title, notes, dueAt (ms), repeat, priority, category, who }] where `who` is a display name or ''.
+// tasks: [{ id, title, notes, dueAt (ms), repeat, repeatUntil, lastAt (ms of the last one, for counted repeats), priority, category, who }] where `who` is a display name or ''.
 // opts: { name, tz, now, siteUrl, groupId }
 function buildIcs(tasks, opts) {
   const tz = opts.tz || 'UTC';
@@ -63,7 +63,9 @@ function buildIcs(tasks, opts) {
     if (at.midnight) L.push('DTSTART;VALUE=DATE:' + at.date, 'DTEND;VALUE=DATE:' + nextDay(at.date));
     else L.push(`DTSTART;TZID=${tz}:${at.date}T${at.time}`, 'DURATION:PT30M');
     const rr = rrule(t.repeat);
-    if (rr) L.push('RRULE:' + rr + (/^\d{4}-\d{2}-\d{2}$/.test(t.repeatUntil || '') ? ';UNTIL=' + (at.midnight ? t.repeatUntil.replace(/-/g, '') : utcStamp(endOfDay(t.repeatUntil, tz))) : ''));
+    const until = t.lastAt != null ? (at.midnight ? local(t.lastAt, tz).date : utcStamp(t.lastAt))
+      : /^\d{4}-\d{2}-\d{2}$/.test(t.repeatUntil || '') ? (at.midnight ? t.repeatUntil.replace(/-/g, '') : utcStamp(endOfDay(t.repeatUntil, tz))) : '';
+    if (rr) L.push('RRULE:' + rr + (until ? ';UNTIL=' + until : ''));
     L.push('SUMMARY:' + esc(title));
     const desc = [t.category ? 'Category: ' + t.category : '', t.notes || ''].filter(Boolean).join('\n');
     if (desc) L.push('DESCRIPTION:' + esc(desc));

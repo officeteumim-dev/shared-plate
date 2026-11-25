@@ -85,6 +85,7 @@ test('a daily task can end on a date: it says so, and finishing the last one mak
   await page.fill('#task-form [name=time]', '08:00');
   await page.selectOption('#task-form [name=repeat]', 'daily');
   assert.equal(await page.isVisible('#until-row'), true);
+  await page.selectOption('#task-form [name=ends]', 'date');
   await page.fill('#task-form [name=until]', '2026-11-05');
   await page.click('#task-form [type=submit]');
   assert.match(await page.textContent('#task-err'), /before the first one/);
@@ -103,6 +104,48 @@ test('a daily task can end on a date: it says so, and finishing the last one mak
   await page.click('summary:has-text("Daily list")').catch(() => {});
   await page.locator('.row-wrap:has-text("Give Rena antibiotics") [data-act=done]').first().click();
   await page.waitForSelector('.toast:has-text("That was the last one")');
+  assert.deepEqual(errors, []);
+});
+
+test('one daily task can be due several times a day and end after a number of times', async () => {
+  const { page, errors } = await open({ at: '2026-11-06T16:00:00-05:00' });
+  await page.click('[data-act=add]');
+  await page.fill('#task-form [name=title]', 'Give Rena antibiotics');
+  await page.click('[data-owner=shared]');
+  await page.click('#task-form summary');
+  await page.fill('#task-form [name=date]', '2026-11-06');
+  await page.fill('#task-form [name=time]', '08:00');
+  assert.equal(await page.isHidden('#times-row'), true, 'only for tasks that repeat by days');
+  await page.selectOption('#task-form [name=repeat]', 'daily');
+  await page.click('[data-add-time]');
+  await page.fill('#extra-times [name=extra]', '18:30');
+  await page.selectOption('#task-form [name=ends]', 'count');
+  await page.fill('#task-form [name=count]', '3');
+  await page.click('#task-form [type=submit]');
+  await page.waitForFunction(() => !document.querySelector('#task-form'));
+  // It's 4pm, so the first one is this evening's (and it's on the tile, within 3 hours).
+  const row = page.locator('.row-wrap:has-text("Give Rena antibiotics")').first();
+  const text = await row.textContent();
+  assert.match(text, /Every day at 8am and 6:30pm/);
+  assert.match(text, /1 of 3/);
+  assert.match(text, /6:30/);
+  // Evening → tomorrow morning (2 of 3) → tomorrow evening (3 of 3, the last).
+  await row.locator('[data-act=done]').click();
+  await page.waitForSelector('.toast:has-text("Next one")');
+  assert.match(await page.textContent('.toast'), /8am|8:00/);
+  await page.clock.setFixedTime(new Date('2026-11-07T08:10:00-05:00'));
+  await page.click('[data-act=calendar]'); await page.click('[data-act=home]');
+  const row2 = page.locator('.row-wrap:has-text("Give Rena antibiotics")').first();
+  assert.match(await row2.textContent(), /2 of 3/);
+  await row2.locator('[data-act=done]').click();
+  await page.waitForSelector('.toast:has-text("6:30")');
+  await page.clock.setFixedTime(new Date('2026-11-07T18:40:00-05:00'));
+  await page.click('[data-act=calendar]'); await page.click('[data-act=home]');
+  const row3 = page.locator('.row-wrap:has-text("Give Rena antibiotics")').first();
+  assert.match(await row3.textContent(), /3 of 3/);
+  await row3.locator('[data-act=done]').click();
+  await page.waitForSelector('.toast:has-text("That was the last one")');
+  // Editing keeps the times and the count.
   assert.deepEqual(errors, []);
 });
 

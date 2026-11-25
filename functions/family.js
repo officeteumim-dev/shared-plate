@@ -29,8 +29,8 @@ function visibleTasks(tasks, share, names, L, from, to, tz) {
     const push = at => { if (at >= from && at < to) out.push({ id: t.id, title: String(t.title || '').slice(0, 200), at, repeat: !!L.normRepeat(t.repeat) && at !== due, who }); };
     push(due);
     if (L.normRepeat(t.repeat)) {
-      let next = due;
-      for (let i = 0; i < 62; i++) { next = L.nextDue(next, t.repeat, next, t.repeatUntil, tz); if (!next || next >= to) break; push(next); }
+      let next = due, cur = { ...t, dueAt: due };
+      for (let i = 0; i < 62; i++) { next = L.nextFor(cur, next, tz); if (!next || next >= to) break; push(next); cur = { ...cur, ...L.carryRepeat(cur), dueAt: next }; }
     }
   }
   return out.sort((a, b) => a.at - b.at).slice(0, 300);

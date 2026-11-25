@@ -69,7 +69,9 @@ const TOOLS = [
         owner: { type: 'string', description: '"me" (default), "shared" (whoever gets to it first), or a person\'s name from get_household.' },
         due: { type: 'string', description: 'Optional. "YYYY-MM-DD" (9am that day) or "YYYY-MM-DDTHH:MM" in local time.' },
         repeat: { type: 'string', enum: REPEATS, description: 'Optional. Needs a due date.' },
-        repeat_until: { type: 'string', description: 'Optional last day it repeats, YYYY-MM-DD (e.g. the end of a course of medicine). One task that repeats, not separate tasks.' },
+        repeat_until: { type: 'string', description: 'Optional last day it repeats, YYYY-MM-DD. One task that repeats, not separate tasks.' },
+        times: { type: 'array', items: { type: 'string' }, description: 'For a daily task done more than once a day: every time of day, "HH:MM" 24-hour, e.g. ["08:00", "18:30"]. One task, not one per time.' },
+        ends_after: { type: 'integer', description: 'Optional: how many times in all, e.g. 16 doses of medicine. The first one is the due date/time.' },
         notes: { type: 'string' },
         category: { type: 'string', description: 'Optional, e.g. Work, Car, House.' },
         priority: { type: 'string', description: 'Optional short code up to 3 characters, e.g. 1, 2, 3, A.' }
@@ -87,6 +89,8 @@ const TOOLS = [
         task_id: { type: 'string' },
         title: { type: 'string' }, owner: { type: 'string' }, due: { type: 'string', description: 'New due date/time, or "" to clear it.' },
         repeat: { type: 'string', enum: REPEATS }, repeat_until: { type: 'string', description: 'Last day it repeats, YYYY-MM-DD; "" to repeat with no end.' },
+        times: { type: 'array', items: { type: 'string' }, description: 'Daily times "HH:MM"; [] for once a day.' },
+        ends_after: { type: 'integer', description: 'How many times in all; 0 for no count.' },
         notes: { type: 'string' }, category: { type: 'string' }, priority: { type: 'string' },
         snooze_until: { type: 'string', description: '"YYYY-MM-DD" (comes back at 8am) or "YYYY-MM-DDTHH:MM". Use "" to bring it back now.' }
       },
@@ -218,7 +222,8 @@ async function callTool(name, args, ctx) {
     const bits = [who];
     if (t.status === 'snoozed') bits.push(`snoozed until ${fmt(L.toMs(t.showAgainOn), tz)}`);
     else if (t.dueAt) bits.push(`due ${fmt(L.toMs(t.dueAt), tz)}`);
-    if (L.repeatLabel(t.repeat)) bits.push(L.repeatLabel(t.repeat).toLowerCase() + (t.repeatUntil ? ` until ${t.repeatUntil}` : ''));
+    if (L.repeatLabel(t.repeat)) bits.push(L.repeatText({ ...t, dailyTimes: t.dailyTimes }).toLowerCase() + (t.repeatUntil ? ` until ${t.repeatUntil}` : ''));
+    if (t.countOf) bits.push(`${t.countN || 1} of ${t.countOf}`);
     if (t.category) bits.push(t.category);
     if (t.status === 'done') bits.push('done');
     if (t.commentCount) bits.push(`${t.commentCount} comment${t.commentCount === 1 ? '' : 's'}`);
@@ -231,6 +236,22 @@ async function callTool(name, args, ctx) {
     if (!repeat || repeat === 'none') throw new UserError('Only a repeating task can have an end date.');
     if (dueAt != null && s < new Intl.DateTimeFormat('en-CA', { timeZone: tz }).format(new Date(L.toMs(dueAt)))) throw new UserError('The end date is before the first one is due.');
     return s;
+  };
+  const timesArg = (v, repeat) => {
+    if (v == null) return null;
+    const list = L.normTimes(Array.isArray(v) ? v : [v]);
+    if (!list.length) return null;
+    const r = L.normRepeat(repeat);
+    if (!r || r.unit !== 'day') throw new UserError('Times of day are for tasks that repeat daily.');
+    return list.length > 1 ? list : null;
+  };
+  const countArg = (v, repeat, already) => {
+    if (v == null || v === 0) return null;
+    const n = Math.round(Number(v));
+    if (!L.normRepeat(repeat)) throw new UserError('Only a repeating task can end after a number of times.');
+    if (!(n >= 2 && n <= 999)) throw new UserError('ends_after must be between 2 and 999.');
+    if (n < already) throw new UserError(`This is already number ${already}.`);
+    return n;
   };
   const getTask = async id => {
     const t = await store.get(String(id || ''));
@@ -272,8 +293,11 @@ async function callTool(name, args, ctx) {
       const repeat = REPEATS.includes(args.repeat) ? args.repeat : 'none';
       if (repeat !== 'none' && dueAt == null) throw new UserError('A repeating task needs a due date.');
       const repeatUntil = untilArg(args.repeat_until, repeat, dueAt);
+      const dailyTimes = timesArg(args.times, repeat);
+      const countOf = countArg(args.ends_after, repeat, 1);
       const data = {
         title, notes: clean(args.notes, 2000), owner, claimedBy: null, status: 'open', dueAt, repeat, ...(repeatUntil ? { repeatUntil } : {}),
+        ...(dailyTimes ? { dailyTimes } : {}), ...(countOf ? { countOf, countN: 1 } : {}),
         category: clean(args.category, 40), priority: clean(args.priority, 3),
         createdBy: uid, createdAt: 'NOW', updatedAt: 'NOW', notifyOnly: null, notifyKind: null
       };
@@ -289,7 +313,9 @@ async function callTool(name, args, ctx) {
       if (args.owner != null) { patch.owner = resolveOwner(args.owner); patch.claimedBy = null; }
       if (args.due != null) patch.dueAt = parseWhen(args.due, tz);
       if (args.repeat != null) patch.repeat = REPEATS.includes(args.repeat) ? args.repeat : 'none';
-      if (patch.repeat === 'none') patch.repeatUntil = null;
+      if (patch.repeat === 'none') { patch.repeatUntil = null; patch.dailyTimes = null; patch.countOf = null; patch.countN = null; }
+      if (args.times != null) patch.dailyTimes = timesArg(args.times, patch.repeat || t.repeat);
+      if (args.ends_after != null) { patch.countOf = args.ends_after ? countArg(args.ends_after, patch.repeat || t.repeat, t.countN || 1) : null; patch.countN = patch.countOf ? (t.countN || 1) : null; }
       if (args.notes != null) patch.notes = clean(args.notes, 2000);
       if (args.category != null) patch.category = clean(args.category, 40);
       if (args.priority != null) patch.priority = clean(args.priority, 3);
@@ -314,12 +340,12 @@ async function callTool(name, args, ctx) {
       const t = await getTask(args.task_id);
       if (t.status === 'done') return `Already done: ${describe(t)}`;
       const patch = { status: 'done', completedAt: 'NOW', completedBy: uid, notifyAt: null, notifyOnly: null, notifyKind: null, updatedAt: 'NOW' };
-      const next = L.nextDue(L.toMs(t.dueAt), t.repeat, now, t.repeatUntil, tz);
-      let msg = `Done: ${t.title}.`;
-      if (!next && L.normRepeat(t.repeat) && t.repeatUntil) msg += ' That was the last one.';
+      const next = L.nextFor({ ...t, dueAt: L.toMs(t.dueAt) }, now, tz);
+      let msg = `Done: ${t.title}${t.countOf ? ` (${t.countN || 1} of ${t.countOf})` : ''}.`;
+      if (!next && L.normRepeat(t.repeat) && (t.repeatUntil || t.countOf)) msg += ' That was the last one.';
       if (next) {
         const copy = { title: t.title, notes: t.notes || '', owner: t.owner, claimedBy: null, status: 'open', dueAt: next, repeat: t.repeat,
-          ...(t.repeatUntil ? { repeatUntil: t.repeatUntil } : {}),
+          ...L.carryRepeat(t),
           category: t.category || '', priority: t.priority || '', createdBy: uid, createdAt: 'NOW', repeatOf: t.id };
         copy.notifyAt = L.notifyAtFor(copy, now);
         patch.nextId = await store.add(copy);

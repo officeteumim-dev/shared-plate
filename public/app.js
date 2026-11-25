@@ -752,7 +752,8 @@
     const meta = [];
     if (snoozed) meta.push(`Back ${esc(L.fmtWhen(x.showAgainOn, t))}`);
     else if (x.dueAt) meta.push(`<span class="${L.isOverdue(x, t) ? 'late' : ''}">${L.isOverdue(x, t) ? 'Overdue, ' : ''}${esc(L.fmtWhen(x.dueAt, t))}</span>`);
-    if (L.repeatLabel(x.repeat)) meta.push(esc(L.repeatLabel(x.repeat) + (x.repeatUntil ? ' ' + L.untilLabel(x.repeatUntil, t) : '')));
+    if (L.repeatLabel(x.repeat)) meta.push(esc(L.repeatText(x) + (x.repeatUntil ? ' ' + L.untilLabel(x.repeatUntil, t) : '')));
+    if (x.countOf) meta.push(`<span class="count-of">${x.countN || 1} of ${x.countOf}</span>`);
     if (x.owner === 'shared' && x.claimedBy) meta.push(`<span class="tag">${x.claimedBy === S.uid ? 'Shared, you took it' : `Shared, ${esc(nameOf(x.claimedBy))} took it`}</span>`);
     else if (k === 'theirs' && others().length > 1) meta.push(`<span class="tag">${esc(nameOf(L.responsible(x)))}</span>`);
     if (x.notes) meta.push('Note');
@@ -858,10 +859,11 @@
       push(x, due, { snoozed: L.effectiveStatus(x, now()) === 'snoozed' });
       // Upcoming copies of repeating tasks show as rings (not for daily ones, which would fill every day).
       if (L.normRepeat(x.repeat) && !isDaily(x)) {
-        let next = due;
+        let next = due, cur = { ...x, dueAt: due };
         for (let i = 0; i < 62; i++) {
-          next = L.nextDue(next, x.repeat, next, x.repeatUntil);
+          next = L.nextFor(cur, next);
           if (!next || next >= to) break;
+          cur = { ...cur, ...L.carryRepeat(cur), dueAt: next };
           push(x, next, { repeat: true, who: x.owner === 'shared' ? 'shared' : x.owner });
         }
       }
@@ -886,7 +888,7 @@
       <span class="bar"></span>
       <button class="body" data-act="edit" data-id="${esc(it.x.id)}">
         <div class="title"${it.done ? ' style="text-decoration:line-through"' : ''}>${prio(it.x)}${esc(it.x.title)}</div>
-        <div class="meta"><span>${esc(whoName(it.who))}</span>${timed ? `<span>${esc(L.fmtTime(it.at))}</span>` : ''}${it.repeat ? `<span>${esc(L.repeatLabel(it.x.repeat))}</span>` : ''}${it.snoozed ? '<span>Snoozed</span>' : ''}${it.done ? '<span>Done</span>' : ''}${!it.done && !it.repeat && L.isOverdue(it.x, t) ? '<span class="late">Overdue</span>' : ''}</div>
+        <div class="meta"><span>${esc(whoName(it.who))}</span>${timed ? `<span>${esc(L.fmtTime(it.at))}</span>` : ''}${it.repeat ? `<span>${esc(L.repeatText(it.x))}</span>` : ''}${it.snoozed ? '<span>Snoozed</span>' : ''}${it.done ? '<span>Done</span>' : ''}${!it.done && !it.repeat && L.isOverdue(it.x, t) ? '<span class="late">Overdue</span>' : ''}</div>
       </button></div></li>`;
   }
   const modeSwitch = () => `<div class="seg cal-mode" role="group" aria-label="Calendar view">
@@ -1347,7 +1349,7 @@
       ${list.map(x => `<article class="sugg" data-id="${esc(x.id)}">
         <div class="sugg-from">${esc(x.fromName || 'A linked family')}</div>
         <div class="sugg-title">${esc(x.title)}</div>
-        <div class="muted small">${x.dueAt ? esc(L.fmtWhen(x.dueAt, t)) : 'No date'}${L.repeatLabel(x.repeat) ? `, ${esc(L.repeatLabel(x.repeat).toLowerCase())}` : ''}</div>
+        <div class="muted small">${x.dueAt ? esc(L.fmtWhen(x.dueAt, t)) : 'No date'}${L.repeatLabel(x.repeat) ? `, ${esc(L.repeatText(x).toLowerCase())}` : ''}</div>
         ${x.notes ? `<p class="sugg-note">${esc(x.notes)}</p>` : ''}
         <div class="seg sugg-owner" role="group" aria-label="Whose plate">
           <button type="button" data-o="${esc(S.uid)}" aria-pressed="false">Me</button>
@@ -1461,13 +1463,13 @@
     const t = now();
     const patch = { status: 'done', completedAt: 'NOW', completedBy: S.uid, notifyAt: null, notifyOnly: null, notifyKind: null, updatedAt: 'NOW' };
     const next = L.nextFor(x, t);
-    const last = !next && !!L.normRepeat(x.repeat) && !!x.repeatUntil;
+    const last = !next && !!L.normRepeat(x.repeat) && !!(x.repeatUntil || x.countOf);
     if (next) {
       const nid = B.newId(S.gid);
       const copy = {
         title: x.title, notes: x.notes || '', owner: x.owner, claimedBy: null, status: 'open',
         dueAt: next, repeat: x.repeat, createdBy: S.uid, createdAt: 'NOW', repeatOf: id,
-        ...(x.repeatUntil ? { repeatUntil: x.repeatUntil } : {}), ...(x.category ? { category: x.category } : {}), ...(x.priority ? { priority: x.priority } : {})
+        ...L.carryRepeat(x), ...(x.category ? { category: x.category } : {}), ...(x.priority ? { priority: x.priority } : {})
       };
       copy.notifyAt = L.notifyAtFor(copy, t);
       B.setTask(S.gid, nid, copy);
@@ -1738,6 +1740,11 @@
     const dn = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
     const wd = f.repeat?.weekdays || (due ? [new Date(due).getDay()] : []);
     const snoozed = x && x.status === 'snoozed';
+    // Extra times each day (the Time field is the first), and how it ends.
+    const extraTimes = x && L.multiTimes(x) ? L.normTimes(x.dailyTimes).filter(hm => hm !== timeStr(due)) : [];
+    const ends = x?.countOf ? 'count' : x?.repeatUntil ? 'date' : 'never';
+    const byDay = k => k === 'daily' || (k === 'custom' && (f.repeat?.unit || 'day') === 'day');
+    const timeRow = hm => `<div class="extra-time"><input type="time" name="extra" value="${esc(hm)}" aria-label="Another time"><button type="button" class="icon-btn small" data-rm-time aria-label="Remove this time"><span aria-hidden="true">×</span></button></div>`;
     openSheet(`<form id="task-form" class="stack" autocomplete="off">
       <h2>${x ? 'Edit task' : 'Add a task'}</h2>
       <label class="field"><span>What needs doing?</span><input class="title-input" type="text" name="title" maxlength="200" required value="${esc(x?.title || '')}" placeholder="Call the plumber"></label>
@@ -1766,9 +1773,16 @@
         </div>
         <div class="days" id="days" ${f.repeat?.unit === 'week' ? '' : 'hidden'}>${dn.map((d, i) => `<button type="button" data-day="${i}" aria-pressed="${wd.includes(i)}" aria-label="${['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'][i]}">${d}</button>`).join('')}</div>
       </div>
-      <label class="field" id="until-row" ${kind === 'none' ? 'hidden' : ''}><span>Ends (optional)</span>
-        <input type="date" name="until" value="${esc(x?.repeatUntil || '')}" aria-describedby="until-tip"></label>
-      <p class="muted small" id="until-tip" ${kind === 'none' ? 'hidden' : ''}>The last day it repeats, like the end of a course of medicine. Leave empty to keep going.</p>
+      <div class="field" id="times-row" ${byDay(kind) ? '' : 'hidden'}><span>More times each day</span>
+        <div id="extra-times">${extraTimes.map(timeRow).join('')}</div>
+        <button type="button" class="btn quiet small add-time" data-add-time>+ Add a time</button>
+        <p class="muted small">For things done more than once a day, like medicine morning and evening. The Time above is one of them.</p></div>
+      <div id="until-row" class="stack" ${kind === 'none' ? 'hidden' : ''}>
+        <label class="field"><span>Ends</span><select name="ends">
+          ${[['never', 'Never'], ['date', 'On a date'], ['count', 'After a number of times']].map(([v, l]) => `<option value="${v}" ${ends === v ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
+        <label class="field" id="ends-date" ${ends === 'date' ? '' : 'hidden'}><span>Last day</span><input type="date" name="until" value="${esc(x?.repeatUntil || '')}"></label>
+        <label class="field" id="ends-count" ${ends === 'count' ? '' : 'hidden'}><span>How many times in all${x?.countOf ? ` (this is number ${x.countN || 1})` : ''}</span><input type="number" name="count" min="2" max="999" inputmode="numeric" value="${x?.countOf || ''}" placeholder="e.g. 16 doses"></label>
+      </div>
       <label class="field"><span>Note</span><textarea name="notes" maxlength="2000" placeholder="Anything the other person should know">${esc(x?.notes || '')}</textarea></label>
       ${sharesEvents ? `<label class="toggle"><span>Share with linked families</span><input type="checkbox" name="familyShare" ${x?.familyShare ? 'checked' : ''}></label>` : ''}
       </div></details>
@@ -1806,7 +1820,21 @@
         if (c) form.category.value = form.category.value === c.dataset.qcat ? '' : c.dataset.qcat;
         if (p) form.priority.value = form.priority.value === p.dataset.qprio ? '' : p.dataset.qprio;
       };
-      form.repeat.onchange = () => { sheet.querySelector('#custom').hidden = form.repeat.value !== 'custom'; sheet.querySelector('#until-row').hidden = sheet.querySelector('#until-tip').hidden = form.repeat.value === 'none'; };
+      const syncRepeat = () => {
+        const k = form.repeat.value;
+        sheet.querySelector('#custom').hidden = k !== 'custom';
+        sheet.querySelector('#until-row').hidden = k === 'none';
+        sheet.querySelector('#times-row').hidden = !(k === 'daily' || (k === 'custom' && form.unit.value === 'day'));
+      };
+      form.repeat.onchange = syncRepeat; form.unit.addEventListener('change', syncRepeat);
+      form.ends.onchange = () => { sheet.querySelector('#ends-date').hidden = form.ends.value !== 'date'; sheet.querySelector('#ends-count').hidden = form.ends.value !== 'count'; };
+      sheet.querySelector('[data-add-time]').onclick = () => {
+        const box = sheet.querySelector('#extra-times');
+        if (box.children.length >= 7) return;
+        box.insertAdjacentHTML('beforeend', timeRow(''));
+        box.lastElementChild.querySelector('input').focus();
+      };
+      sheet.querySelector('#extra-times').onclick = e => { const b = e.target.closest('[data-rm-time]'); if (b) b.parentElement.remove(); };
       form.unit.onchange = () => { sheet.querySelector('#days').hidden = form.unit.value !== 'week'; };
       sheet.querySelector('#days').onclick = e => {
         const b = e.target.closest('[data-day]'); if (b) b.setAttribute('aria-pressed', b.getAttribute('aria-pressed') !== 'true');
@@ -1841,9 +1869,33 @@
         if (repeat !== 'none' && !dueAt) {
           const err = sheet.querySelector('#task-err'); err.hidden = false; err.textContent = 'Pick a due date so we know when it repeats.'; return;
         }
-        const repeatUntil = repeat !== 'none' && L.validUntil(form.until.value) ? form.until.value : null;
-        if (repeatUntil && repeatUntil < dateStr(dueAt)) {
-          const err = sheet.querySelector('#task-err'); err.hidden = false; err.textContent = 'The end date is before the first one is due.'; return;
+        const showErr = m => { const err = sheet.querySelector('#task-err'); err.hidden = false; err.textContent = m; };
+        // Several times a day: the Time field plus the extra ones, when it repeats by days.
+        const rule = L.normRepeat(repeat);
+        let dailyTimes = null;
+        if (rule && rule.unit === 'day') {
+          const extras = [...sheet.querySelectorAll('[name=extra]')].map(i => i.value).filter(Boolean);
+          if (extras.length) {
+            if (!form.time.value) return showErr('Set the Time too: it’s the first of the times each day.');
+            const all = L.normTimes([form.time.value, ...extras]);
+            if (all.length > 1) dailyTimes = all;
+          }
+        }
+        // A new one whose first time today has passed starts at the next of its times instead.
+        if (dailyTimes && !x && dueAt < now()) {
+          const next = L.nextFor({ dueAt: now(), repeat, dailyTimes }, now());
+          if (next) dueAt = next;
+        }
+        const ends = repeat === 'none' ? 'never' : form.ends.value;
+        const repeatUntil = ends === 'date' && L.validUntil(form.until.value) ? form.until.value : null;
+        if (ends === 'date' && !repeatUntil) return showErr('Pick the last day, or choose Never.');
+        if (repeatUntil && repeatUntil < dateStr(dueAt)) return showErr('The end date is before the first one is due.');
+        let countOf = null, countN = null;
+        if (ends === 'count') {
+          countOf = Math.round(+form.count.value);
+          countN = x?.countOf ? (x.countN || 1) : 1;
+          if (!(countOf >= 2 && countOf <= 999)) return showErr('Say how many times in all (2 or more).');
+          if (countOf < countN) return showErr(`This is already number ${countN}, so it can’t end after ${countOf}.`);
         }
         if (f.owner.startsWith('family:')) {
           const to = f.owner.slice(7), fam = S.links.find(l => l.id === to);
@@ -1857,7 +1909,7 @@
           title, notes: form.notes.value.trim(), owner: f.owner,
           category: form.category.value.trim().slice(0, 40), priority: form.priority.value.trim().slice(0, 3),
           claimedBy: f.owner === 'shared' ? (x?.owner === 'shared' ? (x.claimedBy || null) : null) : null,
-          dueAt, repeat, repeatUntil, updatedAt: 'NOW', notifyOnly: null, notifyKind: null
+          dueAt, repeat, repeatUntil, dailyTimes, countOf, countN, updatedAt: 'NOW', notifyOnly: null, notifyKind: null
         };
         if (form.familyShare) data.familyShare = form.familyShare.checked;
         if (x) {

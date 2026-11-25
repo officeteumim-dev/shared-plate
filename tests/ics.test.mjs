@@ -49,3 +49,9 @@ test('a repeat with an end date gets UNTIL: the end of that day in UTC for timed
   assert.match(ics, /RRULE:FREQ=DAILY;UNTIL=20261201T045959Z\r\n/);
   assert.match(ics, /RRULE:FREQ=DAILY;UNTIL=20261130\r\n/);
 });
+
+test('a counted repeat ends at its last one', () => {
+  const ics = buildIcs([{ id: 'a', title: 'Antibiotics', dueAt: Date.parse('2026-11-25T08:00:00-05:00'), repeat: 'daily', lastAt: Date.parse('2026-12-03T08:00:00-05:00') }],
+    { tz: 'America/New_York', now: Date.parse('2026-11-25T12:00:00Z') });
+  assert.match(ics, /RRULE:FREQ=DAILY;UNTIL=20261203T130000Z\r\n/);
+});

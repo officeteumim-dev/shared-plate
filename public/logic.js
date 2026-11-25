@@ -162,7 +162,77 @@
     if (validUntil(until) && ymdIn(next, tz) > until) return null;
     return next;
   }
-  const nextFor = (t, now, tz) => nextDue(t.dueAt, t.repeat, now, t.repeatUntil, tz);
+  // ---------- Several times a day, and a set number of times ----------
+  // A task that repeats by days can have dailyTimes: ['08:00', '18:30'] (in the household's time zone), and a
+  // count: countOf (how many in all) with countN (which one this is). Medicine twice a day for 8 days is one task.
+  function normTimes(a) {
+    if (!Array.isArray(a)) return [];
+    return [...new Set(a.map(x => String(x || '').trim()).filter(x => /^([01]\d|2[0-3]):[0-5]\d$/.test(x)))].sort().slice(0, 8);
+  }
+  const multiTimes = t => { const r = normRepeat(t.repeat); return !!r && r.unit === 'day' && normTimes(t.dailyTimes).length > 1; };
+  const ymdAdd = (ymd, n) => { const [y, m, d] = ymd.split('-').map(Number); return new Date(Date.UTC(y, m - 1, d + n)).toISOString().slice(0, 10); };
+  // ms for a wall-clock time on a day in a time zone (the device's when tz is left out).
+  function zonedMs(ymd, hm, tz) {
+    const [y, m, d] = ymd.split('-').map(Number), [h, mi] = hm.split(':').map(Number);
+    if (!tz) return new Date(y, m - 1, d, h, mi).getTime();
+    const want = Date.UTC(y, m - 1, d, h, mi);
+    const off = ms => {
+      const p = new Intl.DateTimeFormat('en-US', { timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).formatToParts(new Date(ms)).reduce((o, x) => { o[x.type] = x.value; return o; }, {});
+      return Date.UTC(+p.year, +p.month - 1, +p.day, +p.hour % 24, +p.minute) - ms;
+    };
+    try { return want - off(want - off(want)); } catch (e) { return new Date(y, m - 1, d, h, mi).getTime(); }
+  }
+  // The slots of a several-times-a-day task after its current one. If some have already passed, the most recent of
+  // them comes next (so a late dose is still shown, overdue) rather than skipping straight to the future.
+  function nextSlot(t, now, tz) {
+    const rule = normRepeat(t.repeat), times = normTimes(t.dailyTimes);
+    const due = toMs(t.dueAt) != null ? toMs(t.dueAt) : now;
+    let day = ymdIn(due, tz), prev = null;
+    for (let i = 0; i < 400; i++, day = ymdAdd(day, rule.every)) {
+      if (validUntil(t.repeatUntil) && day > t.repeatUntil) break;
+      for (const hm of times) {
+        const at = zonedMs(day, hm, tz);
+        if (at <= due) continue;
+        if (at <= now) { prev = at; continue; }
+        return prev != null ? prev : at;
+      }
+    }
+    return prev;
+  }
+  // The next copy of a repeating task: due time, or null when it has ended (end date or count).
+  function nextFor(t, now, tz) {
+    if (t.countOf && (t.countN || 1) >= t.countOf) return null;
+    if (multiTimes(t)) return nextSlot(t, now, tz);
+    return nextDue(t.dueAt, t.repeat, now, t.repeatUntil, tz);
+  }
+  // The fields the next copy carries forward.
+  function carryRepeat(t) {
+    const o = {};
+    if (t.repeatUntil) o.repeatUntil = t.repeatUntil;
+    if (normTimes(t.dailyTimes).length > 1) o.dailyTimes = normTimes(t.dailyTimes);
+    if (t.countOf) { o.countOf = t.countOf; o.countN = (t.countN || 1) + 1; }
+    return o;
+  }
+  // When the last copy will be due, for a task that ends after a count (null otherwise or when it can't tell).
+  function lastOccurrence(t, tz) {
+    if (!t.countOf || toMs(t.dueAt) == null) return null;
+    let cur = { ...t, dueAt: toMs(t.dueAt) };
+    for (let i = 0; i < 1000 && (cur.countN || 1) < cur.countOf; i++) {
+      const next = nextFor(cur, 0, tz);
+      if (!next) break;
+      cur = { ...cur, ...carryRepeat(cur), dueAt: next };
+    }
+    return cur.dueAt;
+  }
+  // '18:30' → '6:30pm'
+  function fmtHm(hm) { const [h, m] = hm.split(':').map(Number); const ap = h >= 12 ? 'pm' : 'am'; const h12 = h % 12 || 12; return m ? `${h12}:${String(m).padStart(2, '0')}${ap}` : `${h12}${ap}`; }
+  // "Every day at 8am and 6:30pm" (repeatLabel plus the times), for tasks with several times a day.
+  function repeatText(t) {
+    const base = repeatLabel(t.repeat);
+    if (!base) return '';
+    const times = multiTimes(t) ? normTimes(t.dailyTimes) : [];
+    return base + (times.length ? ' at ' + (times.length === 2 ? times.map(fmtHm).join(' and ') : times.slice(0, -1).map(fmtHm).join(', ') + ' and ' + fmtHm(times[times.length - 1])) : '');
+  }
   const validUntil = s => typeof s === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(s);
   function ymdIn(ms, tz) {
     if (tz) {
@@ -314,7 +384,7 @@
 
   return {
     toMs, effectiveStatus, responsible, laneOf, lanes, needsNudge, isOverdue, arrange, byCategory, categories, reorder,
-    normRepeat, nextDue, nextFor, untilLabel, validUntil, repeatLabel, inQuiet, quietEndsAt, minutesIn,
+    normRepeat, nextDue, nextFor, untilLabel, validUntil, repeatLabel, normTimes, multiTimes, zonedMs, carryRepeat, lastOccurrence, repeatText, fmtHm, ymdIn, inQuiet, quietEndsAt, minutesIn,
     notifyAtFor, recipients, planReminder, dafReminderDue, fmtWhen, fmtTime, startOfDay, endOfDay
   };
 });
