@@ -220,7 +220,7 @@ exports.calendarFeed = onRequest({ invoker: 'public', memory: '256MiB' }, async 
     if (dueAt == null) return;
     const resp = L.responsible(t);
     if (who === 'mine' && resp !== feed.uid && resp !== null) return; // mine + unclaimed shared
-    tasks.push({ id: d.id, title: t.title, notes: t.notes, dueAt, repeat: t.repeat, priority: t.priority, category: t.category,
+    tasks.push({ id: d.id, title: t.title, notes: t.notes, dueAt, repeat: t.repeat, repeatUntil: t.repeatUntil, priority: t.priority, category: t.category,
       who: who === 'all' ? (resp ? name(resp) : 'Shared') : (resp ? '' : 'Shared') });
   });
   const siteUrl = SITE_URL.value() || `https://${process.env.GCLOUD_PROJECT}.web.app`;
@@ -411,7 +411,7 @@ exports.linkedCalendar = onCall(async req => {
     if (!g) continue;
     const q = await db.collection(`groups/${l.id}/tasks`).where('status', 'in', ['open', 'snoozed']).get();
     const tasks = q.docs.map(d => ({ id: d.id, ...d.data() }));
-    out.push({ groupId: l.id, name: g.name || l.data().name, share: theirSide.share, items: F.visibleTasks(tasks, theirSide.share, g.names || {}, L, from, to) });
+    out.push({ groupId: l.id, name: g.name || l.data().name, share: theirSide.share, items: F.visibleTasks(tasks, theirSide.share, g.names || {}, L, from, to, tz) });
   }
   return { families: out };
 });

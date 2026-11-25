@@ -16,7 +16,7 @@ function cleanSettings(s) {
 
 // What a linked household may see of ours, for dates from..to (ms). tasks: [{ id, title, dueAt (ms), repeat, owner,
 // claimedBy, status, familyShare }]. Returns [{ id, title, at, repeat, who }] where who is a display name or 'Shared'.
-function visibleTasks(tasks, share, names, L, from, to) {
+function visibleTasks(tasks, share, names, L, from, to, tz) {
   if (share !== 'events' && share !== 'calendar') return [];
   const out = [];
   for (const t of tasks) {
@@ -30,7 +30,7 @@ function visibleTasks(tasks, share, names, L, from, to) {
     push(due);
     if (L.normRepeat(t.repeat)) {
       let next = due;
-      for (let i = 0; i < 62; i++) { next = L.nextDue(next, t.repeat, next); if (!next || next >= to) break; push(next); }
+      for (let i = 0; i < 62; i++) { next = L.nextDue(next, t.repeat, next, t.repeatUntil, tz); if (!next || next >= to) break; push(next); }
     }
   }
   return out.sort((a, b) => a.at - b.at).slice(0, 300);
