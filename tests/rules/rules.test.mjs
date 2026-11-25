@@ -290,6 +290,14 @@ test('a repeating task can carry an end date (YYYY-MM-DD) and nothing else there
   await assertFails(updateDoc(doc(db.A(), 'groups', G, 'tasks', 't1'), { repeatUntil: 20261130 }));
 });
 
+test('a daily task can carry several times a day and a count', async () => {
+  await assertSucceeds(updateDoc(doc(db.A(), 'groups', G, 'tasks', 't1'), { repeat: 'daily', dueAt: future(), dailyTimes: ['08:00', '18:30'], countOf: 16, countN: 1 }));
+  await assertSucceeds(updateDoc(doc(db.B(), 'groups', G, 'tasks', 't1'), { countN: 16 }));
+  await assertFails(updateDoc(doc(db.A(), 'groups', G, 'tasks', 't1'), { countN: 17 }));
+  await assertFails(updateDoc(doc(db.A(), 'groups', G, 'tasks', 't1'), { countOf: 1, countN: 1 }));
+  await assertFails(updateDoc(doc(db.A(), 'groups', G, 'tasks', 't1'), { dailyTimes: '08:00' }));
+});
+
 test('anything outside groups and users is closed', async () => {
   await assertFails(setDoc(doc(db.A(), 'config', 'x'), { a: 1 }));
   await assertFails(getDoc(doc(db.A(), 'config', 'x')));

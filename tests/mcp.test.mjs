@@ -157,3 +157,17 @@ test('a daily task with an end date is one task, and finishing the last one says
   r = await call(ctx, 'update_task', { task_id: id, repeat_until: '' });
   assert.equal(tasks.get(id).repeatUntil, null);
 });
+
+test('medicine twice a day for 16 doses is one task', async () => {
+  const { tasks, ctx } = household();
+  let r = await call(ctx, 'add_task', { title: 'Antibiotics', owner: 'shared', due: '2026-11-09T18:30', repeat: 'daily', times: ['08:00', '18:30'], ends_after: 16 });
+  assert.match(r.text, /every day at 8am and 6:30pm, 1 of 16/);
+  const id = [...tasks].find(([, t]) => t.title === 'Antibiotics')[0];
+  r = await call({ ...ctx, now: Date.parse('2026-11-09T18:40:00-05:00') }, 'complete_task', { task_id: id });
+  assert.match(r.text, /^Done: Antibiotics \(1 of 16\)\. Next one: .*Nov 10.*8/);
+  const next = tasks.get(tasks.get(id).nextId);
+  assert.deepEqual([next.countN, next.countOf, next.dailyTimes], [2, 16, ['08:00', '18:30']]);
+  assert.equal((await call(ctx, 'add_task', { title: 'X', due: '2026-11-12T08:00', repeat: 'weekly', times: ['08:00', '20:00'] })).error, true);
+  assert.equal((await call(ctx, 'add_task', { title: 'X', due: '2026-11-12T08:00', times: ['08:00', '20:00'] })).error, true);
+  assert.equal((await call(ctx, 'add_task', { title: 'X', due: '2026-11-12T08:00', repeat: 'daily', ends_after: 1 })).error, true);
+});

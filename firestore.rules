@@ -160,10 +160,13 @@ service cloud.firestore {
           return d.keys().hasOnly(['title', 'notes', 'owner', 'claimedBy', 'claimedAt', 'status', 'dueAt', 'showAgainOn',
               'repeat', 'createdBy', 'createdAt', 'updatedAt', 'completedAt', 'completedBy', 'notifyAt', 'notifyOnly',
               'notifyKind', 'nextId', 'repeatOf', 'category', 'priority', 'order',
-              'commentCount', 'lastComment', 'lastCommentBy', 'lastCommentAt', 'seenBy', 'familyShare', 'fromFamily', 'repeatUntil'])
+              'commentCount', 'lastComment', 'lastCommentBy', 'lastCommentAt', 'seenBy', 'familyShare', 'fromFamily', 'repeatUntil', 'dailyTimes', 'countOf', 'countN'])
             && validCommentSummary(d)
             && (!('familyShare' in d) || d.familyShare is bool)
             && optStr(d, 'fromFamily', 40)
+            && (d.get('dailyTimes', null) == null || (d.dailyTimes is list && d.dailyTimes.size() <= 8))
+            && (d.get('countOf', null) == null || (d.countOf is int && d.countOf >= 2 && d.countOf <= 999
+              && d.get('countN', 1) is int && d.get('countN', 1) >= 1 && d.get('countN', 1) <= d.countOf))
             && (d.get('repeatUntil', null) == null || (d.repeatUntil is string && d.repeatUntil.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$')))
             && str(d.title, 200)
             && optStr(d, 'notes', 2000)

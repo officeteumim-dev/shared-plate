@@ -220,8 +220,17 @@ exports.calendarFeed = onRequest({ invoker: 'public', memory: '256MiB' }, async 
     if (dueAt == null) return;
     const resp = L.responsible(t);
     if (who === 'mine' && resp !== feed.uid && resp !== null) return; // mine + unclaimed shared
-    tasks.push({ id: d.id, title: t.title, notes: t.notes, dueAt, repeat: t.repeat, repeatUntil: t.repeatUntil, priority: t.priority, category: t.category,
-      who: who === 'all' ? (resp ? name(resp) : 'Shared') : (resp ? '' : 'Shared') });
+    const base = { id: d.id, title: t.title, notes: t.notes, dueAt, repeat: t.repeat, repeatUntil: t.repeatUntil, priority: t.priority, category: t.category,
+      lastAt: L.lastOccurrence({ ...t, dueAt }, tz), who: who === 'all' ? (resp ? name(resp) : 'Shared') : (resp ? '' : 'Shared') };
+    if (!L.multiTimes(t)) return tasks.push(base);
+    // Several times a day: one repeating event per time of day, each starting at its first time from the current one.
+    const every = L.normRepeat(t.repeat).every, day = L.ymdIn(dueAt, tz);
+    for (const hm of L.normTimes(t.dailyTimes)) {
+      let first = L.zonedMs(day, hm, tz);
+      if (first < dueAt) { const [y, m, dd] = day.split('-').map(Number); first = L.zonedMs(new Date(Date.UTC(y, m - 1, dd + every)).toISOString().slice(0, 10), hm, tz); }
+      if (base.lastAt != null && first > base.lastAt) continue;
+      tasks.push({ ...base, id: `${d.id}-${hm.replace(':', '')}`, dueAt: first });
+    }
   });
   const siteUrl = SITE_URL.value() || `https://${process.env.GCLOUD_PROJECT}.web.app`;
   const ics = buildIcs(tasks, { name: who === 'all' ? `${group.name || 'Shared Plate'} (everyone)` : `${group.name || 'Shared Plate'} (mine)`,

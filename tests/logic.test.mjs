@@ -186,3 +186,25 @@ test('a repeating task can end on a day: no next one after it', () => {
   assert.equal(L.untilLabel('2026-11-30', at('2026-11-25T12:00:00-05:00')), 'until Nov 30');
   assert.equal(L.untilLabel('2027-01-04', at('2026-11-25T12:00:00-05:00')), 'until Jan 4, 2027');
 });
+
+test('several times a day: the next slot, a late dose still shown, the count and its last one', () => {
+  const tz = 'America/New_York', at = s => Date.parse(s);
+  const t = { dueAt: at('2026-11-25T18:30:00-05:00'), repeat: 'daily', dailyTimes: ['18:30', '08:00', 'bad'], countOf: 16, countN: 1 };
+  assert.deepEqual(L.normTimes(t.dailyTimes), ['08:00', '18:30']);
+  assert.equal(L.nextFor(t, at('2026-11-25T18:35:00-05:00'), tz), at('2026-11-26T08:00:00-05:00'));
+  // Morning dose finished late, after the evening time: the evening one comes next, overdue, not skipped.
+  assert.equal(L.nextFor({ ...t, dueAt: at('2026-11-26T08:00:00-05:00') }, at('2026-11-26T20:00:00-05:00'), tz), at('2026-11-26T18:30:00-05:00'));
+  // Two days behind: just the latest missed one.
+  assert.equal(L.nextFor({ ...t, dueAt: at('2026-11-26T08:00:00-05:00') }, at('2026-11-28T12:00:00-05:00'), tz), at('2026-11-28T08:00:00-05:00'));
+  assert.deepEqual(L.carryRepeat(t), { dailyTimes: ['08:00', '18:30'], countOf: 16, countN: 2 });
+  assert.equal(L.nextFor({ ...t, countN: 16 }, at('2026-11-25T18:35:00-05:00'), tz), null);
+  assert.equal(L.lastOccurrence(t, tz), at('2026-12-03T08:00:00-05:00'), '16 doses from Wed evening end Thu morning a week later');
+  assert.equal(L.repeatText(t), 'Every day at 8am and 6:30pm');
+  assert.equal(L.repeatText({ repeat: 'daily', dailyTimes: ['08:00'] }), 'Every day');
+  // An end date stops the slots too; across a clock change the wall time holds.
+  assert.equal(L.nextFor({ ...t, countOf: null, repeatUntil: '2026-11-25' }, at('2026-11-25T18:35:00-05:00'), tz), null);
+  assert.equal(L.zonedMs('2026-11-01', '08:00', tz), at('2026-11-01T08:00:00-05:00'));
+  assert.equal(L.zonedMs('2026-10-31', '08:00', tz), at('2026-10-31T08:00:00-04:00'));
+  // A count without times works on any repeat.
+  assert.equal(L.nextFor({ dueAt: at('2026-11-25T09:00:00-05:00'), repeat: 'weekly', countOf: 2, countN: 2 }, at('2026-11-25T10:00:00-05:00'), tz), null);
+});

@@ -46,7 +46,7 @@ To open sign-up later (Phase 3): set `allowlist` and `ALLOWLIST` to `null`, and 
 - **Overdue** tasks sit at the top of their own tile, under a red *Overdue* heading.
 - **Done:** tap the circle or swipe a task to the right. Undo from the message that appears, or from **Completed**.
 - **Snooze** from a task's edit sheet. It disappears until that date (8am) and comes back with a notification.
-- **Repeats:** finishing a repeating task puts the next one on the plate automatically. A repeat can have an end date (*Ends*, the last day it repeats, `repeatUntil`), like a course of medicine; finishing the last one makes no new copy, and calendar feeds get `UNTIL`.
+- **Repeats:** finishing a repeating task puts the next one on the plate automatically. A repeat can have an end date (*Ends*, the last day it repeats, `repeatUntil`), like a course of medicine; finishing the last one makes no new copy, and calendar feeds get `UNTIL`. A task that repeats by days can also be due **several times a day** (*More times each day*, `dailyTimes`), and any repeat can end **after a number of times** (`countOf`, with `countN` for which one it is, shown as "3 of 16"). A dose finished late still brings up the one that has since passed, rather than skipping it. Calendar feeds get one event per time of day.
 - **Quiet hours** are per person (Settings). Reminders that land in them arrive when they end.
 - **Categories:** give a task a category (Work, Car, House or your own). Each tile groups its tasks by category, and the chips above the tiles show one category at a time.
 - **Priority:** an optional short code (1, 2, 3, A, B… up to 3 characters) shown in small before the title.
