@@ -752,7 +752,7 @@
     const meta = [];
     if (snoozed) meta.push(`Back ${esc(L.fmtWhen(x.showAgainOn, t))}`);
     else if (x.dueAt) meta.push(`<span class="${L.isOverdue(x, t) ? 'late' : ''}">${L.isOverdue(x, t) ? 'Overdue, ' : ''}${esc(L.fmtWhen(x.dueAt, t))}</span>`);
-    if (L.repeatLabel(x.repeat)) meta.push(esc(L.repeatLabel(x.repeat)));
+    if (L.repeatLabel(x.repeat)) meta.push(esc(L.repeatLabel(x.repeat) + (x.repeatUntil ? ' ' + L.untilLabel(x.repeatUntil, t) : '')));
     if (x.owner === 'shared' && x.claimedBy) meta.push(`<span class="tag">${x.claimedBy === S.uid ? 'Shared, you took it' : `Shared, ${esc(nameOf(x.claimedBy))} took it`}</span>`);
     else if (k === 'theirs' && others().length > 1) meta.push(`<span class="tag">${esc(nameOf(L.responsible(x)))}</span>`);
     if (x.notes) meta.push('Note');
@@ -860,7 +860,7 @@
       if (L.normRepeat(x.repeat) && !isDaily(x)) {
         let next = due;
         for (let i = 0; i < 62; i++) {
-          next = L.nextDue(next, x.repeat, next);
+          next = L.nextDue(next, x.repeat, next, x.repeatUntil);
           if (!next || next >= to) break;
           push(x, next, { repeat: true, who: x.owner === 'shared' ? 'shared' : x.owner });
         }
@@ -1460,12 +1460,14 @@
     const x = findTask(id); if (!x) return;
     const t = now();
     const patch = { status: 'done', completedAt: 'NOW', completedBy: S.uid, notifyAt: null, notifyOnly: null, notifyKind: null, updatedAt: 'NOW' };
-    const next = L.nextDue(x.dueAt, x.repeat, t);
+    const next = L.nextFor(x, t);
+    const last = !next && !!L.normRepeat(x.repeat) && !!x.repeatUntil;
     if (next) {
       const nid = B.newId(S.gid);
       const copy = {
         title: x.title, notes: x.notes || '', owner: x.owner, claimedBy: null, status: 'open',
-        dueAt: next, repeat: x.repeat, createdBy: S.uid, createdAt: 'NOW', repeatOf: id
+        dueAt: next, repeat: x.repeat, createdBy: S.uid, createdAt: 'NOW', repeatOf: id,
+        ...(x.repeatUntil ? { repeatUntil: x.repeatUntil } : {}), ...(x.category ? { category: x.category } : {}), ...(x.priority ? { priority: x.priority } : {})
       };
       copy.notifyAt = L.notifyAtFor(copy, t);
       B.setTask(S.gid, nid, copy);
@@ -1473,7 +1475,7 @@
     }
     B.updateTask(S.gid, id, patch);
     if (navigator.vibrate) navigator.vibrate(12);
-    toast(next ? `Done. Next one ${L.fmtWhen(next, t)}.` : `Done: ${x.title}`, 'Undo', () => undoDone(id));
+    toast(next ? `Done. Next one ${L.fmtWhen(next, t)}.` : last ? `Done. That was the last one: ${x.title}.` : `Done: ${x.title}`, 'Undo', () => undoDone(id));
   }
 
   function undoDone(id) {
@@ -1764,6 +1766,9 @@
         </div>
         <div class="days" id="days" ${f.repeat?.unit === 'week' ? '' : 'hidden'}>${dn.map((d, i) => `<button type="button" data-day="${i}" aria-pressed="${wd.includes(i)}" aria-label="${['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'][i]}">${d}</button>`).join('')}</div>
       </div>
+      <label class="field" id="until-row" ${kind === 'none' ? 'hidden' : ''}><span>Ends (optional)</span>
+        <input type="date" name="until" value="${esc(x?.repeatUntil || '')}" aria-describedby="until-tip"></label>
+      <p class="muted small" id="until-tip" ${kind === 'none' ? 'hidden' : ''}>The last day it repeats, like the end of a course of medicine. Leave empty to keep going.</p>
       <label class="field"><span>Note</span><textarea name="notes" maxlength="2000" placeholder="Anything the other person should know">${esc(x?.notes || '')}</textarea></label>
       ${sharesEvents ? `<label class="toggle"><span>Share with linked families</span><input type="checkbox" name="familyShare" ${x?.familyShare ? 'checked' : ''}></label>` : ''}
       </div></details>
@@ -1801,7 +1806,7 @@
         if (c) form.category.value = form.category.value === c.dataset.qcat ? '' : c.dataset.qcat;
         if (p) form.priority.value = form.priority.value === p.dataset.qprio ? '' : p.dataset.qprio;
       };
-      form.repeat.onchange = () => { sheet.querySelector('#custom').hidden = form.repeat.value !== 'custom'; };
+      form.repeat.onchange = () => { sheet.querySelector('#custom').hidden = form.repeat.value !== 'custom'; sheet.querySelector('#until-row').hidden = sheet.querySelector('#until-tip').hidden = form.repeat.value === 'none'; };
       form.unit.onchange = () => { sheet.querySelector('#days').hidden = form.unit.value !== 'week'; };
       sheet.querySelector('#days').onclick = e => {
         const b = e.target.closest('[data-day]'); if (b) b.setAttribute('aria-pressed', b.getAttribute('aria-pressed') !== 'true');
@@ -1836,6 +1841,10 @@
         if (repeat !== 'none' && !dueAt) {
           const err = sheet.querySelector('#task-err'); err.hidden = false; err.textContent = 'Pick a due date so we know when it repeats.'; return;
         }
+        const repeatUntil = repeat !== 'none' && L.validUntil(form.until.value) ? form.until.value : null;
+        if (repeatUntil && repeatUntil < dateStr(dueAt)) {
+          const err = sheet.querySelector('#task-err'); err.hidden = false; err.textContent = 'The end date is before the first one is due.'; return;
+        }
         if (f.owner.startsWith('family:')) {
           const to = f.owner.slice(7), fam = S.links.find(l => l.id === to);
           const btn = form.querySelector('[type=submit]'); btn.disabled = true;
@@ -1848,7 +1857,7 @@
           title, notes: form.notes.value.trim(), owner: f.owner,
           category: form.category.value.trim().slice(0, 40), priority: form.priority.value.trim().slice(0, 3),
           claimedBy: f.owner === 'shared' ? (x?.owner === 'shared' ? (x.claimedBy || null) : null) : null,
-          dueAt, repeat, updatedAt: 'NOW', notifyOnly: null, notifyKind: null
+          dueAt, repeat, repeatUntil, updatedAt: 'NOW', notifyOnly: null, notifyKind: null
         };
         if (form.familyShare) data.familyShare = form.familyShare.checked;
         if (x) {

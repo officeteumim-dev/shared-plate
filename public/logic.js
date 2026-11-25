@@ -151,13 +151,36 @@
   }
 
   // The next due time for a repeating task, never in the past. Tasks without a due time repeat from `now`.
-  function nextDue(dueAt, repeat, now) {
+  // until: optional last day ('YYYY-MM-DD', inclusive) — past it there is no next one. tz: the time zone that day is
+  // in (the device's own when left out).
+  function nextDue(dueAt, repeat, now, until, tz) {
     const rule = normRepeat(repeat);
     if (!rule) return null;
     const base = toMs(dueAt) != null ? toMs(dueAt) : now;
     let next = stepOnce(base, rule, base);
     for (let i = 0; i < 1000 && next <= now; i++) next = stepOnce(next, rule, base);
+    if (validUntil(until) && ymdIn(next, tz) > until) return null;
     return next;
+  }
+  const nextFor = (t, now, tz) => nextDue(t.dueAt, t.repeat, now, t.repeatUntil, tz);
+  const validUntil = s => typeof s === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(s);
+  function ymdIn(ms, tz) {
+    if (tz) {
+      try {
+        const p = new Intl.DateTimeFormat('en-CA', { timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(new Date(ms));
+        const g = k => p.find(x => x.type === k).value;
+        return `${g('year')}-${g('month')}-${g('day')}`;
+      } catch (e) { /* fall through to the device's time zone */ }
+    }
+    const d = new Date(ms);
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  }
+  // "until Nov 30" (with the year when it isn't this year's).
+  function untilLabel(until, now) {
+    if (!validUntil(until)) return '';
+    const [y, m, d] = until.split('-').map(Number);
+    const sameYear = y === new Date(now || Date.now()).getFullYear();
+    return 'until ' + new Date(y, m - 1, d).toLocaleDateString('en-US', { month: 'short', day: 'numeric', ...(sameYear ? {} : { year: 'numeric' }) });
   }
 
   function repeatLabel(repeat) {
@@ -291,7 +314,7 @@
 
   return {
     toMs, effectiveStatus, responsible, laneOf, lanes, needsNudge, isOverdue, arrange, byCategory, categories, reorder,
-    normRepeat, nextDue, repeatLabel, inQuiet, quietEndsAt, minutesIn,
+    normRepeat, nextDue, nextFor, untilLabel, validUntil, repeatLabel, inQuiet, quietEndsAt, minutesIn,
     notifyAtFor, recipients, planReminder, dafReminderDue, fmtWhen, fmtTime, startOfDay, endOfDay
   };
 });

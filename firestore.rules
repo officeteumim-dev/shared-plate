@@ -160,10 +160,11 @@ service cloud.firestore {
           return d.keys().hasOnly(['title', 'notes', 'owner', 'claimedBy', 'claimedAt', 'status', 'dueAt', 'showAgainOn',
               'repeat', 'createdBy', 'createdAt', 'updatedAt', 'completedAt', 'completedBy', 'notifyAt', 'notifyOnly',
               'notifyKind', 'nextId', 'repeatOf', 'category', 'priority', 'order',
-              'commentCount', 'lastComment', 'lastCommentBy', 'lastCommentAt', 'seenBy', 'familyShare', 'fromFamily'])
+              'commentCount', 'lastComment', 'lastCommentBy', 'lastCommentAt', 'seenBy', 'familyShare', 'fromFamily', 'repeatUntil'])
             && validCommentSummary(d)
             && (!('familyShare' in d) || d.familyShare is bool)
             && optStr(d, 'fromFamily', 40)
+            && (d.get('repeatUntil', null) == null || (d.repeatUntil is string && d.repeatUntil.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$')))
             && str(d.title, 200)
             && optStr(d, 'notes', 2000)
             && d.status in ['open', 'snoozed', 'done']

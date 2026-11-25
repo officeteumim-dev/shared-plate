@@ -283,6 +283,13 @@ test('hours: members log, time and edit hours for anyone in the household; clien
   await assertFails(updateDoc(doc(db.B(), 'groups', G), { 'clients.c4': { name: 'X' }, name: 'Renamed' }));
 });
 
+test('a repeating task can carry an end date (YYYY-MM-DD) and nothing else there', async () => {
+  await assertSucceeds(updateDoc(doc(db.A(), 'groups', G, 'tasks', 't1'), { repeat: 'daily', dueAt: future(), repeatUntil: '2026-11-30' }));
+  await assertSucceeds(updateDoc(doc(db.B(), 'groups', G, 'tasks', 't1'), { repeatUntil: null }));
+  await assertFails(updateDoc(doc(db.A(), 'groups', G, 'tasks', 't1'), { repeatUntil: 'Nov 30' }));
+  await assertFails(updateDoc(doc(db.A(), 'groups', G, 'tasks', 't1'), { repeatUntil: 20261130 }));
+});
+
 test('anything outside groups and users is closed', async () => {
   await assertFails(setDoc(doc(db.A(), 'config', 'x'), { a: 1 }));
   await assertFails(getDoc(doc(db.A(), 'config', 'x')));

@@ -139,3 +139,21 @@ test('comments from Claude: ask about a shopping item or a task, and read the re
   assert.match((await call(ctx, 'get_comments', { about: 'task', id: 't1' })).text, /No comments on Call the plumber yet/);
   assert.match((await call(ctx, 'add_comment', { about: 'shopping', id: 'nope', text: 'x' })).text, /no shopping item/);
 });
+
+test('a daily task with an end date is one task, and finishing the last one says so', async () => {
+  const { tasks, ctx } = household();
+  let r = await call(ctx, 'add_task', { title: 'Give Rena antibiotics', due: '2026-11-09T20:00', repeat: 'daily', repeat_until: '2026-11-10' });
+  assert.match(r.text, /every day until 2026-11-10/);
+  const id = [...tasks].find(([, t]) => t.title === 'Give Rena antibiotics')[0];
+  r = await call({ ...ctx, now: Date.parse('2026-11-09T20:10:00-05:00') }, 'complete_task', { task_id: id });
+  assert.match(r.text, /Next one: .*Nov 10/);
+  const nextId = tasks.get(id).nextId;
+  assert.equal(tasks.get(nextId).repeatUntil, '2026-11-10');
+  r = await call({ ...ctx, now: Date.parse('2026-11-10T20:10:00-05:00') }, 'complete_task', { task_id: nextId });
+  assert.match(r.text, /That was the last one\./);
+  assert.equal(tasks.get(nextId).nextId, undefined);
+  assert.equal((await call(ctx, 'add_task', { title: 'X', due: '2026-11-12', repeat_until: '2026-11-20' })).error, true, 'needs a repeat');
+  assert.equal((await call(ctx, 'add_task', { title: 'X', due: '2026-11-12', repeat: 'daily', repeat_until: '2026-11-01' })).error, true, 'end before start');
+  r = await call(ctx, 'update_task', { task_id: id, repeat_until: '' });
+  assert.equal(tasks.get(id).repeatUntil, null);
+});

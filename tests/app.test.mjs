@@ -75,6 +75,37 @@ test('the chat line sends a message to the assistant, which adds it to the plate
   assert.deepEqual(errors, []);
 });
 
+test('a daily task can end on a date: it says so, and finishing the last one makes no next copy', async () => {
+  const { page, errors } = await open();
+  await page.click('[data-act=add]');
+  await page.fill('#task-form [name=title]', 'Give Rena antibiotics');
+  await page.click('#task-form summary');
+  assert.equal(await page.isHidden('#until-row'), true, 'no end date until it repeats');
+  await page.fill('#task-form [name=date]', '2026-11-06');
+  await page.fill('#task-form [name=time]', '08:00');
+  await page.selectOption('#task-form [name=repeat]', 'daily');
+  assert.equal(await page.isVisible('#until-row'), true);
+  await page.fill('#task-form [name=until]', '2026-11-05');
+  await page.click('#task-form [type=submit]');
+  assert.match(await page.textContent('#task-err'), /before the first one/);
+  await page.fill('#task-form [name=until]', '2026-11-07');
+  await page.click('#task-form [type=submit]');
+  await page.waitForFunction(() => !document.querySelector('#task-form'));
+  await page.click('summary:has-text("Daily list")').catch(() => {});
+  const row = page.locator('.row-wrap:has-text("Give Rena antibiotics")').first();
+  assert.match(await row.textContent(), /Every day until Nov 7/);
+  // Finish today's: tomorrow's (the last) comes. Finish that: nothing more.
+  await row.locator('[data-act=done]').click();
+  await page.waitForSelector('.toast:has-text("Next one")');
+  await page.clock.setFixedTime(new Date('2026-11-07T08:30:00-05:00'));
+  await page.evaluate(() => window.dispatchEvent(new Event('focus')));
+  await page.click('[data-act=calendar]'); await page.click('[data-act=home]');
+  await page.click('summary:has-text("Daily list")').catch(() => {});
+  await page.locator('.row-wrap:has-text("Give Rena antibiotics") [data-act=done]').first().click();
+  await page.waitForSelector('.toast:has-text("That was the last one")');
+  assert.deepEqual(errors, []);
+});
+
 test('Hours: totals per client and person, a timer, and logging time by hand', async () => {
   const { page, errors } = await open();
   await page.click('[data-act=hours]');

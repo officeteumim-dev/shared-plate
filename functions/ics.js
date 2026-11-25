@@ -26,6 +26,13 @@ function local(ms, tz) {
 const utcStamp = ms => new Date(ms).toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '');
 const nextDay = yyyymmdd => { const d = new Date(Date.UTC(+yyyymmdd.slice(0, 4), +yyyymmdd.slice(4, 6) - 1, +yyyymmdd.slice(6, 8) + 1)); return d.toISOString().slice(0, 10).replace(/-/g, ''); };
 
+// The last second of a day ('YYYY-MM-DD') in a time zone, as UTC ms (RRULE UNTIL must be UTC when DTSTART has a TZID).
+function endOfDay(ymd, tz) {
+  const [y, m, d] = ymd.split('-').map(Number);
+  const guess = Date.UTC(y, m - 1, d + 1);
+  const off = ms => { const p = local(ms, tz); return Date.UTC(+p.date.slice(0, 4), +p.date.slice(4, 6) - 1, +p.date.slice(6, 8), +p.time.slice(0, 2), +p.time.slice(2, 4), +p.time.slice(4, 6)) - ms; };
+  return guess - off(guess - off(guess)) - 1000;
+}
 const DAYS = ['SU', 'MO', 'TU', 'WE', 'TH', 'FR', 'SA'];
 function rrule(repeat) {
   if (!repeat || repeat === 'none') return null;
@@ -56,7 +63,7 @@ function buildIcs(tasks, opts) {
     if (at.midnight) L.push('DTSTART;VALUE=DATE:' + at.date, 'DTEND;VALUE=DATE:' + nextDay(at.date));
     else L.push(`DTSTART;TZID=${tz}:${at.date}T${at.time}`, 'DURATION:PT30M');
     const rr = rrule(t.repeat);
-    if (rr) L.push('RRULE:' + rr);
+    if (rr) L.push('RRULE:' + rr + (/^\d{4}-\d{2}-\d{2}$/.test(t.repeatUntil || '') ? ';UNTIL=' + (at.midnight ? t.repeatUntil.replace(/-/g, '') : utcStamp(endOfDay(t.repeatUntil, tz))) : ''));
     L.push('SUMMARY:' + esc(title));
     const desc = [t.category ? 'Category: ' + t.category : '', t.notes || ''].filter(Boolean).join('\n');
     if (desc) L.push('DESCRIPTION:' + esc(desc));

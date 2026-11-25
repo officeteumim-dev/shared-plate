@@ -173,3 +173,16 @@ test('Daf Yomi reminder: once, in the half hour after the chosen time, per day o
   assert.equal(L.dafReminderDue(days, 'America/New_York', at('2026-11-16T08:10:00-05:00'), null), null, 'Monday is off');
   assert.equal(L.dafReminderDue({ ...same, enabled: false }, 'America/New_York', at('2026-11-15T21:04:00-05:00'), null), null);
 });
+
+test('a repeating task can end on a day: no next one after it', () => {
+  const at = s => Date.parse(s);
+  // Daily at 8pm New York until Nov 30: the Nov 30 dose still comes, Dec 1 doesn't.
+  assert.equal(L.nextDue(at('2026-11-29T20:00:00-05:00'), 'daily', at('2026-11-29T20:05:00-05:00'), '2026-11-30', 'America/New_York'), at('2026-11-30T20:00:00-05:00'));
+  assert.equal(L.nextDue(at('2026-11-30T20:00:00-05:00'), 'daily', at('2026-11-30T20:05:00-05:00'), '2026-11-30', 'America/New_York'), null);
+  // No end date, or a malformed one, keeps it going.
+  assert.ok(L.nextDue(at('2026-11-30T20:00:00-05:00'), 'daily', at('2026-11-30T20:05:00-05:00'), null, 'America/New_York'));
+  assert.ok(L.nextDue(at('2026-11-30T20:00:00-05:00'), 'daily', at('2026-11-30T20:05:00-05:00'), 'Nov 30', 'America/New_York'));
+  assert.equal(L.nextFor({ dueAt: at('2026-11-30T20:00:00-05:00'), repeat: 'daily', repeatUntil: '2026-11-30' }, at('2026-11-30T20:05:00-05:00'), 'America/New_York'), null);
+  assert.equal(L.untilLabel('2026-11-30', at('2026-11-25T12:00:00-05:00')), 'until Nov 30');
+  assert.equal(L.untilLabel('2027-01-04', at('2026-11-25T12:00:00-05:00')), 'until Jan 4, 2027');
+});

@@ -40,3 +40,12 @@ test('repeat rules', () => {
   assert.equal(rrule({ every: 2, unit: 'week', weekdays: [1, 4] }), 'FREQ=WEEKLY;INTERVAL=2;BYDAY=MO,TH');
   assert.equal(rrule('none'), null);
 });
+
+test('a repeat with an end date gets UNTIL: the end of that day in UTC for timed events, the date for all-day ones', () => {
+  const ics = buildIcs([
+    { id: 'a', title: 'Antibiotics', dueAt: Date.parse('2026-11-25T20:00:00-05:00'), repeat: 'daily', repeatUntil: '2026-11-30' },
+    { id: 'b', title: 'Check bandage', dueAt: Date.parse('2026-11-25T00:00:00-05:00'), repeat: 'daily', repeatUntil: '2026-11-30' }
+  ], { tz: 'America/New_York', now: Date.parse('2026-11-25T12:00:00Z') });
+  assert.match(ics, /RRULE:FREQ=DAILY;UNTIL=20261201T045959Z\r\n/);
+  assert.match(ics, /RRULE:FREQ=DAILY;UNTIL=20261130\r\n/);
+});
