@@ -276,6 +276,7 @@ function toolContext(groupId, uid, group, user) {
       async get(id) { if (!/^[A-Za-z0-9]{1,40}$/.test(id)) return null; const d = await col.doc(id).get(); return d.exists ? fromDoc(d) : null; },
       async add(data) { const ref = col.doc(); await ref.set(toFirestore(data)); return ref.id; },
       async update(id, patch) { await col.doc(id).update(toFirestore(patch)); },
+      async remove(id) { await col.doc(id).delete(); },
       async shopList() { const q = await shop.get(); return q.docs.map(fromDoc); },
       async shopGet(id) { if (!/^[A-Za-z0-9]{1,40}$/.test(id)) return null; const d = await shop.doc(id).get(); return d.exists ? fromDoc(d) : null; },
       async shopAdd(data) { const ref = shop.doc(); await ref.set(toFirestore(data)); return ref.id; },

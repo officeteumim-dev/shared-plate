@@ -27,7 +27,8 @@ function household(uid = 'avi') {
     async list() { return [...tasks].map(([id, t]) => ({ id, ...t })); },
     async get(id) { return tasks.has(id) ? { id, ...tasks.get(id) } : null; },
     async add(d) { const id = 'n' + (++n); tasks.set(id, { ...d }); return id; },
-    async update(id, p) { tasks.set(id, { ...tasks.get(id), ...p }); }
+    async update(id, p) { tasks.set(id, { ...tasks.get(id), ...p }); },
+    async remove(id) { tasks.delete(id); }
   };
   const group = { name: 'Our home', members: { avi: 'owner', leah: 'member' }, names: { avi: 'Avi', leah: 'Leah' } };
   return { tasks, shop, ctx: { uid, group, tz: 'America/New_York', now: NOW, store, L } };
@@ -44,7 +45,7 @@ test('the handshake and the tool list', async () => {
   assert.ok(init.result.capabilities.tools);
   assert.equal(await mcp.handleMessage({ jsonrpc: '2.0', method: 'notifications/initialized' }, ctx), null);
   const list = await mcp.handleMessage({ jsonrpc: '2.0', id: 2, method: 'tools/list' }, ctx);
-  assert.deepEqual(list.result.tools.map(t => t.name), ['get_household', 'list_tasks', 'add_task', 'update_task', 'complete_task', 'add_shopping_items', 'list_shopping', 'update_shopping_item', 'log_time', 'hours_summary', 'add_comment', 'get_comments', 'take_task']);
+  assert.deepEqual(list.result.tools.map(t => t.name), ['get_household', 'list_tasks', 'add_task', 'update_task', 'complete_task', 'add_shopping_items', 'list_shopping', 'update_shopping_item', 'log_time', 'hours_summary', 'add_comment', 'get_comments', 'take_task', 'delete_task']);
   const unknown = await mcp.handleMessage({ jsonrpc: '2.0', id: 3, method: 'resources/list' }, ctx);
   assert.equal(unknown.error.code, -32601);
 });
@@ -170,4 +171,12 @@ test('medicine twice a day for 16 doses is one task', async () => {
   assert.equal((await call(ctx, 'add_task', { title: 'X', due: '2026-11-12T08:00', repeat: 'weekly', times: ['08:00', '20:00'] })).error, true);
   assert.equal((await call(ctx, 'add_task', { title: 'X', due: '2026-11-12T08:00', times: ['08:00', '20:00'] })).error, true);
   assert.equal((await call(ctx, 'add_task', { title: 'X', due: '2026-11-12T08:00', repeat: 'daily', ends_after: 1 })).error, true);
+});
+
+test('delete_task removes the tasks asked for and says which ids it couldn’t find', async () => {
+  const { tasks, ctx } = household();
+  const r = await call(ctx, 'delete_task', { task_ids: ['t1', 't3', 'nope', 't1'] });
+  assert.equal(r.text, 'Deleted 2 tasks: Call the plumber, Renew registration. Not found: nope.');
+  assert.deepEqual([...tasks.keys()], ['t2']);
+  assert.equal((await call(ctx, 'delete_task', { task_ids: [] })).error, true);
 });
