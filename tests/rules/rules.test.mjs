@@ -298,6 +298,16 @@ test('a daily task can carry several times a day and a count', async () => {
   await assertFails(updateDoc(doc(db.A(), 'groups', G, 'tasks', 't1'), { dailyTimes: '08:00' }));
 });
 
+test('a plain new task exactly as the app sends it (no repeat, every optional field null) is accepted', async () => {
+  const data = {
+    title: 'TFD hats Leizer', notes: '', owner: A, category: 'Work', priority: '', claimedBy: null,
+    dueAt: null, repeat: 'none', repeatUntil: null, dailyTimes: null, countOf: null, countN: null,
+    updatedAt: serverTimestamp(), notifyOnly: null, notifyKind: null, status: 'open', createdBy: A, createdAt: serverTimestamp(), notifyAt: null
+  };
+  await assertSucceeds(setDoc(doc(db.A(), 'groups', G, 'tasks', 'plain-new'), data));
+  await assertSucceeds(updateDoc(doc(db.A(), 'groups', G, 'tasks', 'plain-new'), { title: 'Edited', repeatUntil: null, dailyTimes: null, countOf: null, countN: null }));
+});
+
 test('anything outside groups and users is closed', async () => {
   await assertFails(setDoc(doc(db.A(), 'config', 'x'), { a: 1 }));
   await assertFails(getDoc(doc(db.A(), 'config', 'x')));
