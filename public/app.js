@@ -104,6 +104,11 @@
 
   // ---------- Toast ----------
   let toastTimer;
+  // A script error in the app shows up on screen instead of a button silently doing nothing.
+  window.addEventListener('error', e => {
+    if (!e.filename || !e.filename.startsWith(location.origin)) return;
+    try { toast(`Something went wrong: ${e.message}`); } catch (er) { /* toast itself failed */ }
+  });
   function toast(msg, action, fn) {
     clearTimeout(toastTimer);
     toastEl.innerHTML = `<span>${esc(msg)}</span>${action ? `<button type="button">${esc(action)}</button>` : ''}`;
@@ -1852,6 +1857,14 @@
       });
       form.onsubmit = e => {
         e.preventDefault();
+        try { saveTask(); } catch (er) {
+          // Never fail silently: say what went wrong (and log it) so it can be reported.
+          console.error('saving the task failed', er);
+          const err = sheet.querySelector('#task-err'); err.hidden = false;
+          err.textContent = `Couldn’t save: ${er && er.message ? er.message : er}. Please send a screenshot of this.`;
+        }
+      };
+      const saveTask = () => {
         const title = form.title.value.trim();
         if (!title) return;
         let dueAt = null;
